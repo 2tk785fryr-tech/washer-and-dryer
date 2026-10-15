@@ -36,7 +36,7 @@ The card only uses LocalThings entities. If you also have the machines in the co
 ### Manual
 
 1. Copy `samsung-laundry-card.js` to `config/www/samsung-laundry-card.js`.
-2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.2.0` as a **JavaScript module**, and reload your browser.
+2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.2.1` as a **JavaScript module**, and reload your browser.
 
 ## Use
 
@@ -65,13 +65,15 @@ cards:
         favourites: ["01", "2f", "32", "07", "05", "06", "36", "33"]
 ```
 
+You can also add them from the dashboard editor: **Add card**, search for **Samsung laundry** or **Samsung cycles**, and pick Washer or Dryer in the card's form.
+
 The cards find your machines on their own: the washer is the LocalThings device with a `select.*_wash_temperature` entity, and the dryer the one with `select.*_dry_level`. If you have more than one of either, set `entity` to the start of the entity IDs, for example `entity: laundry_room_samsung_washer`.
 
 ### Options
 
 | Option | Card | What it does |
 |---|---|---|
-| `appliance` | both | `washer` or `dryer` (required) |
+| `appliance` | both | `washer` or `dryer`. Default `washer` |
 | `entity` | both | Start of your entity IDs, e.g. `laundry_room_samsung_washer`. Found automatically if left out |
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |

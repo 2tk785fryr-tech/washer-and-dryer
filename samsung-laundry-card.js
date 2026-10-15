@@ -8,7 +8,7 @@
 //   appliance: dryer
 //
 // Options (both cards):
-//   appliance: washer | dryer             required
+//   appliance: washer | dryer             washer if left out
 //   entity: laundry_room_samsung_washer   the start of your entity IDs (sensor.<entity>_progress, select.<entity>_cycle, ...)
 //                                         optional: found automatically from the LocalThings entities when left out
 //   name: Washer                          card title
@@ -23,7 +23,7 @@
 // Cycles card only:      favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
 
 
-const SAMSUNG_CARD_VERSION = "1.2.0";
+const SAMSUNG_CARD_VERSION = "1.2.1";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -42,6 +42,7 @@ const RUNNING_STATES = ["active", "pause"];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function setup(c) {
+  c = { ...c, appliance: c.appliance || "washer" };   // the card picker adds cards with only a type line
   if (!DEFAULTS[c.appliance]) throw new Error("appliance must be washer or dryer");
   const d = DEFAULTS[c.appliance];
   // cycle codes written without quotes in YAML arrive as numbers (01 -> 1), so turn them back into codes
@@ -207,6 +208,9 @@ class SamsungLaundryCard extends HTMLElement {
     if (this.isConnected && !this.shadowRoot) { this._build(); this._render(); }
   }
   getCardSize() { return 10; }
+  getGridOptions() { return { columns: 6, min_columns: 4 }; }   // sections view: half width, height follows the machine
+  static getConfigElement() { return document.createElement("samsung-laundry-card-editor"); }
+  static getStubConfig() { return { appliance: "washer" }; }
   connectedCallback() {
     if (!this.shadowRoot && this._config) { this._build(); this._render(); }
     clearInterval(this._tick); this._tick = setInterval(() => this._time(), 1000);
@@ -382,7 +386,9 @@ class SamsungLaundryCard extends HTMLElement {
 if (!customElements.get("samsung-laundry-card")) customElements.define("samsung-laundry-card", SamsungLaundryCard);
 window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "samsung-laundry-card"))
-  window.customCards.push({ type: "samsung-laundry-card", name: "Samsung laundry", description: "Samsung washer/dryer (LocalThings) with a progress ring round the door" });
+  window.customCards.push({ type: "samsung-laundry-card", name: "Samsung laundry", preview: true,
+    description: "Samsung washer/dryer (LocalThings) with a progress ring round the door",
+    documentationURL: "https://github.com/2tk785fryr-tech/washer-and-dryer" });
 
 // Cycle picker: cycles as buttons, confirm before starting.
 // Starting = choose the cycle on select.<p>_cycle, then press button.<p>_start. The machine only accepts it with Smart Control on.
@@ -417,6 +423,9 @@ class SamsungCyclesCard extends HTMLElement {
     else if (this.shadowRoot) this._render();
   }
   getCardSize() { return 6; }
+  getGridOptions() { return { columns: 6, min_columns: 3 }; }
+  static getConfigElement() { return document.createElement("samsung-cycles-card-editor"); }
+  static getStubConfig() { return { appliance: "washer" }; }
   connectedCallback() { if (!this.shadowRoot && this._config) this._build(); }
   set hass(h) { this._hass = h; this._render(); }
 
@@ -503,6 +512,41 @@ class SamsungCyclesCard extends HTMLElement {
 }
 if (!customElements.get("samsung-cycles-card")) customElements.define("samsung-cycles-card", SamsungCyclesCard);
 if (!window.customCards.some(c => c.type === "samsung-cycles-card"))
-  window.customCards.push({ type: "samsung-cycles-card", name: "Samsung cycles", description: "Start Samsung washer/dryer cycles (LocalThings)" });
+  window.customCards.push({ type: "samsung-cycles-card", name: "Samsung cycles", preview: true,
+    description: "Start Samsung washer/dryer cycles (LocalThings)",
+    documentationURL: "https://github.com/2tk785fryr-tech/washer-and-dryer" });
+
+// Visual editors for the card picker, built on Home Assistant's own ha-form. Other options (entity, door, cycle_names,
+// favourites, ...) stay in YAML and are kept as they are.
+const APPLIANCE_FIELD = { name: "appliance", required: true, selector: { select: { mode: "dropdown",
+  options: [{ value: "washer", label: "Washer" }, { value: "dryer", label: "Dryer" }] } } };
+const EDITOR_SCHEMA = {
+  machine: [APPLIANCE_FIELD, { name: "name", selector: { text: {} } },
+    { name: "style", selector: { select: { mode: "dropdown", options: [{ value: "photo", label: "Detailed" }, { value: "drawn", label: "Simple drawing" }] } } },
+    { name: "max_width", selector: { text: {} } }],
+  cycles: [APPLIANCE_FIELD, { name: "name", selector: { text: {} } }],
+};
+const EDITOR_LABELS = { appliance: "Machine", name: "Title (optional)", style: "Picture", max_width: "Maximum width, e.g. 380px (optional)" };
+class SamsungCardEditor extends HTMLElement {
+  setConfig(c) { this._config = { appliance: "washer", ...c }; this._draw(); }
+  set hass(h) { this._hass = h; if (this._form) this._form.hass = h; }
+  _draw() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = f => EDITOR_LABELS[f.name] || f.name;
+      this._form.addEventListener("value-changed", e => {
+        const config = { ...e.detail.value };
+        for (const k of Object.keys(config)) if (config[k] === "" || config[k] == null) delete config[k];
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
+      });
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass; this._form.schema = EDITOR_SCHEMA[this.constructor.kind]; this._form.data = this._config;
+  }
+}
+class SamsungLaundryCardEditor extends SamsungCardEditor { static kind = "machine"; }
+class SamsungCyclesCardEditor extends SamsungCardEditor { static kind = "cycles"; }
+if (!customElements.get("samsung-laundry-card-editor")) customElements.define("samsung-laundry-card-editor", SamsungLaundryCardEditor);
+if (!customElements.get("samsung-cycles-card-editor")) customElements.define("samsung-cycles-card-editor", SamsungCyclesCardEditor);
 console.info(`%c SAMSUNG-LAUNDRY-CARD %c v${SAMSUNG_CARD_VERSION} %c based on the hOn card by My Media Build: https://mymediabuild.uk `,
   "background:#4fb3ff;color:#000;font-weight:700", "background:#222;color:#fff", "color:#9a9a9a");
