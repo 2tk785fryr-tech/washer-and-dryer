@@ -2,7 +2,7 @@
 
 Dashboard cards for Samsung washers and dryers connected through **[LocalThings](https://github.com/mbillow/localthings)**. Each card draws a front-loading machine. It shows the time left on the machine's display, a progress ring round the door and laundry turning in the drum, and has buttons to pause, resume, stop or start a cycle.
 
-Adapted from the [hOn Washer & Dryer Card](https://mymediabuild.uk/home-assistant-washer-dryer-card/) by My Media Build. That card was made for Haier, Candy and Hoover machines; this one reads Samsung's LocalThings entities instead.
+> **Credit:** this card is based on the [hOn Washer & Dryer Card](https://mymediabuild.uk/home-assistant-washer-dryer-card/) by **[My Media Build](https://mymediabuild.uk)**. The design, illustrations and animations are theirs; that card was made for Haier, Candy and Hoover machines, and this version reads Samsung's LocalThings entities instead. If you like it, [buy them a coffee](https://buymeacoffee.com/bobgreggr) ☕.
 
 ![Preview](images/preview.png)
 
@@ -15,13 +15,14 @@ Adapted from the [hOn Washer & Dryer Card](https://mymediabuild.uk/home-assistan
 - **Smart Control and door-lock icons**, and an error message if the machine reports an alarm code.
 - **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume only appear when Smart Control is on; Stop works without it.
 - **A cycles card**: the machine's cycles as buttons. Tap one, confirm, and it starts.
+- **A small credit line** under the machine, linking to My Media Build, who made the original card.
 
 ## Requirements
 
 - The **LocalThings** integration (HACS). This card reads its entities: `sensor.*_machine_state`, `*_progress`, `*_progress_percent`, `*_estimated_finish`, `*_completion_time`, `select.*_cycle` and `button.*_start/_pause/_stop`.
 - **Smart Control** switched on at the machine if you want to start, pause or resume it from Home Assistant. Samsung only accepts these commands while it is on: turn the machine on, load it, and press Smart Control. Without it the card still shows everything, and Stop still works.
 
-The core SmartThings integration doesn't expose a cycle picker, progress percentage or Start/Pause buttons for these machines, so the card uses LocalThings.
+The card only uses LocalThings entities. If you also have the machines in the core SmartThings integration, those entities are ignored: SmartThings doesn't expose a cycle picker, progress percentage or Start/Pause buttons for these machines.
 
 ## Install
 
@@ -109,4 +110,4 @@ Cycles downloaded through the SmartThings app (such as Wool or Perm Press on the
 
 ## Licence
 
-MIT. Based on the hOn Washer & Dryer Card by My Media Build (MIT). Not affiliated with or endorsed by Samsung.
+MIT. Based on the hOn Washer & Dryer Card by [My Media Build](https://mymediabuild.uk) (MIT); their copyright notice is kept in `LICENSE`. Not affiliated with or endorsed by Samsung.

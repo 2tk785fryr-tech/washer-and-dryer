@@ -63,11 +63,6 @@ const Samsung = {
       const p = id.slice(7, -9);
       if (h.states[`select.${p}_${probe}`]) return (card._found = p);
     }
-    // no entity registry access (or not LocalThings): go by states alone
-    for (const id of Object.keys(h?.states || {})) {
-      const m = id.match(/^select\.(.+)_(wash_temperature|dry_level)$/);
-      if (m && m[2] === probe && h.states[`sensor.${m[1]}_progress`]) return (card._found = m[1]);
-    }
     return null;
   },
   st(card, id) { const s = card._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; },
@@ -182,6 +177,9 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .ask .go { background:#e5484d; color:#fff; }
 .err { font-size:12.5px; color:#ff8a8a; margin:-4px 0 8px; }
 .err:empty { display:none; }
+.credit { margin-top:10px; text-align:center; font-size:11.5px; color:var(--muted); }
+.credit a { color:var(--c); text-decoration:none; font-weight:600; }
+.credit a:hover { text-decoration:underline; }
 @keyframes spin { to { transform:rotate(360deg); } }
 @keyframes pulse { 50% { opacity:.35; } }
 @media (prefers-reduced-motion:reduce) { .load,.water,.heat { animation:none !important; } }
@@ -233,6 +231,7 @@ class SamsungLaundryCard extends HTMLElement {
         <div class="at icon" id="door" style="left:${g.door.x}%;top:${g.door.y}%"><ha-icon icon="mdi:lock-open-variant"></ha-icon></div>
         <div class="panel" id="rows"></div>
       </div>
+      <div class="credit">Based on the hOn card by <a href="https://mymediabuild.uk/home-assistant-washer-dryer-card/" target="_blank" rel="noopener">My Media Build</a></div>
     </ha-card>`;
     // LocalThings buttons: start = Run (also resumes a paused cycle), pause = Pause, stop = Ready (cancels the cycle).
     r.getElementById("pause").addEventListener("click", () => this._send("pause"));
@@ -459,4 +458,5 @@ class SamsungCyclesCard extends HTMLElement {
 if (!customElements.get("samsung-cycles-card")) customElements.define("samsung-cycles-card", SamsungCyclesCard);
 if (!window.customCards.some(c => c.type === "samsung-cycles-card"))
   window.customCards.push({ type: "samsung-cycles-card", name: "Samsung cycles", description: "Start Samsung washer/dryer cycles (LocalThings)" });
-console.info(`%c SAMSUNG-LAUNDRY-CARD %c v${SAMSUNG_CARD_VERSION} `, "background:#4fb3ff;color:#000;font-weight:700", "background:#222;color:#fff");
+console.info(`%c SAMSUNG-LAUNDRY-CARD %c v${SAMSUNG_CARD_VERSION} %c based on the hOn card by My Media Build: https://mymediabuild.uk `,
+  "background:#4fb3ff;color:#000;font-weight:700", "background:#222;color:#fff", "color:#9a9a9a");
