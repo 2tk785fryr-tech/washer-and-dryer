@@ -16,13 +16,14 @@
 //   cycle_names: { "47": "Shirts" }       names for cycle codes Home Assistant shows as raw codes
 //   door: binary_sensor.washer_door       a door sensor (on = open). Default: binary_sensor.<entity>_door_door or _door if
 //                                         one exists; door: false turns it off
+//   door_hint: true                       "Open door to dry" when the machine is idle with the door shut (default: washer only)
 // Appliance card only:   max_width: 380px
 //                        style: photo | drawn    photo (default) = built-in front-loader illustrations; drawn = a simple built-in drawing
 //                        images: /local/myimg/    optional: your own washer.svg, dryer.svg and laundry-drum.webp (built-in pictures otherwise)
 // Cycles card only:      favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
 
 
-const SAMSUNG_CARD_VERSION = "1.1.0";
+const SAMSUNG_CARD_VERSION = "1.2.0";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -155,7 +156,8 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .glass .shine { position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg,#ffffff30 0%,#ffffff08 30%,#ffffff00 45%),radial-gradient(circle,#00000000 55%,#00000080 100%); }
 .phase { position:absolute; left:50%; bottom:9%; transform:translateX(-50%); white-space:nowrap; font-weight:700; font-size:clamp(11px,3.2cqw,15px);
   padding:2px 10px; border-radius:999px; background:#000a; color:var(--c); opacity:0; transition:opacity .6s; }
-.on .phase, .fin .phase, .ajar .phase { opacity:1; } .ajar:not(.fin) .phase { color:var(--warn); } .fin .phase { color:var(--ok); } .cool .phase { color:var(--cool); }
+.on .phase, .fin .phase, .ajar .phase { opacity:1; } .ajar:not(.fin) .phase { color:var(--warn); }
+.hint .phase { opacity:1; color:var(--warn); } .fin .phase { color:var(--ok); } .cool .phase { color:var(--cool); }
 .ring { aspect-ratio:1; pointer-events:none; }
 .ring svg { width:100%; height:100%; transform:rotate(-90deg); overflow:visible; }
 .ring .track { fill:none; stroke:#00000022; stroke-width:2.4; }
@@ -290,18 +292,20 @@ class SamsungLaundryCard extends HTMLElement {
     const unload = !!doorS && !on && !doorOpen && (prog === "finish"
       || (finishedAt > Date.parse(doorS.last_changed) && Date.now() - finishedAt < 24 * 3600e3));
     const done = !on && (prog === "finish" || wrinkle || unload);
+    // a washer shut between cycles can't dry out, so suggest leaving the door open (once the laundry is out)
+    const dryHint = !!doorS && !on && !doorOpen && !done && (c.door_hint ?? washer) !== false;
     const cool = (on && !washer && prog === "cooling") || wrinkle;
     const alarmS = st(`sensor.${p}_alarm_code`), alarm = alarmS && !["none", "None", "0"].includes(alarmS.state) ? alarmS.state : null;
     const phase = wrinkle ? "Wrinkle prevent" : progS && prog !== "idle" ? Samsung.show(this, progS) : "";
     card.classList.toggle("on", on); card.classList.toggle("paused", paused); card.classList.toggle("off", !on && !done);
-    card.classList.toggle("fin", done); card.classList.toggle("cool", cool); card.classList.toggle("ajar", !on && doorOpen);
+    card.classList.toggle("fin", done); card.classList.toggle("cool", cool); card.classList.toggle("ajar", !on && doorOpen); card.classList.toggle("hint", dryHint);
 
     const pill = r.getElementById("pill");
     pill.className = "pill" + (alarm ? " bad" : on && doorOpen ? " warn" : cool ? " cool" : on ? " run" : done ? " done" : doorOpen ? " warn" : "");
     pill.textContent = alarm ? "Error" : on && doorOpen ? "Door open" : paused ? "Paused" : on ? phase || "Running" : wrinkle ? "Wrinkle prevent"
       : unload ? "Ready to unload" : done ? "Finished" : doorOpen ? "Door open" : powered ? "On" : "Off";
     r.getElementById("phase").textContent = paused ? "Paused" : wrinkle ? phase : unload ? "Ready to unload" : done ? "Finished"
-      : !on && doorOpen ? "Door open" : phase;
+      : !on && doorOpen ? "Door open" : dryHint ? "Open door to dry" : phase;
     r.getElementById("err").textContent = alarm ? `The ${c.title.toLowerCase()} reports alarm code ${alarm}.` : "";
 
     // timing: estimated_finish is a timestamp while running; completion_time (whole minutes left) is the fallback,
@@ -327,8 +331,9 @@ class SamsungLaundryCard extends HTMLElement {
     const door = r.getElementById("door"), lock = st(`binary_sensor.${p}_child_lock`)?.state === "on";
     if (doorS) {
       door.querySelector("ha-icon").setAttribute("icon", doorOpen ? "mdi:door-open" : on ? "mdi:lock" : "mdi:door-closed");
-      door.classList.toggle("lit", on && !doorOpen); door.classList.toggle("warn", doorOpen);
-      door.title = doorOpen ? "Door open" : on ? "Door closed and locked (cycle running)" : "Door closed";
+      door.classList.toggle("lit", on && !doorOpen); door.classList.toggle("warn", doorOpen || dryHint);
+      door.title = doorOpen ? "Door open" : on ? "Door closed and locked (cycle running)"
+        : dryHint ? "Door closed: leave it open between washes so the drum can dry" : "Door closed";
     } else {
       // no door sensor: the door is locked while a cycle is under way
       door.querySelector("ha-icon").setAttribute("icon", on ? "mdi:lock" : lock ? "mdi:human-child" : "mdi:lock-open-variant");
