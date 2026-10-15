@@ -12,7 +12,8 @@ Dashboard cards for Samsung washers and dryers connected through **[LocalThings]
 - **A progress ring round the door**, filled from the machine's own progress percentage: blue for the washer, orange for the dryer, light blue while the dryer cools down or runs wrinkle prevent, and green when the cycle is finished.
 - **The current phase** on the door glass: Weight sensing, Washing, Rinsing, Spinning, Drying, Cooling.
 - **Cycle, temperature and spin speed** (washer) or **dry level** (dryer), plus the finish time. When the washer is idle it shows how many cycles are left before a drum clean; the dryer shows whether wrinkle prevent is on.
-- **Smart Control and door-lock icons**, and an error message if the machine reports an alarm code.
+- **Door open or closed**, from a door sensor if you have one (it finds `binary_sensor.<machine>_door_door` on its own). The door icon shows open, closed, or locked while a cycle runs, and "Door open" appears on the glass. After a cycle the card stays on **Ready to unload** until the door is opened, even after the machine goes back to idle. The cycles card won't start a cycle while the door is open.
+- **A Smart Control icon**, and an error message if the machine reports an alarm code.
 - **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume only appear when Smart Control is on; Stop works without it.
 - **A cycles card**: the machine's cycles as buttons. Tap one, confirm, and it starts.
 - **A small credit line** under the machine, linking to My Media Build, who made the original card.
@@ -35,7 +36,7 @@ The card only uses LocalThings entities. If you also have the machines in the co
 ### Manual
 
 1. Copy `samsung-laundry-card.js` to `config/www/samsung-laundry-card.js`.
-2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.0.0` as a **JavaScript module**, and reload your browser.
+2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.1.0` as a **JavaScript module**, and reload your browser.
 
 ## Use
 
@@ -74,6 +75,7 @@ The cards find your machines on their own: the washer is the LocalThings device 
 | `entity` | both | Start of your entity IDs, e.g. `laundry_room_samsung_washer`. Found automatically if left out |
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
+| `door` | both | Door sensor, `on` = open, e.g. `binary_sensor.laundry_room_samsung_washer_door_door`. Found automatically when it's named `<entity>_door_door` or `<entity>_door`. `false` turns it off |
 | `cycle_names` | both | Names for cycle codes that would otherwise show as "Cycle 47", e.g. `{ "47": "Towels" }` |
 | `max_width` | machine | How wide the machine can get, e.g. `380px` |
 | `style` | machine | `photo` (default, a detailed front-loader illustration) or `drawn` (a simple drawing) |

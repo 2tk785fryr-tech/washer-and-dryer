@@ -14,13 +14,15 @@
 //   name: Washer                          card title
 //   colour: "#4fb3ff"                     accent colour
 //   cycle_names: { "47": "Shirts" }       names for cycle codes Home Assistant shows as raw codes
+//   door: binary_sensor.washer_door       a door sensor (on = open). Default: binary_sensor.<entity>_door_door or _door if
+//                                         one exists; door: false turns it off
 // Appliance card only:   max_width: 380px
 //                        style: photo | drawn    photo (default) = built-in front-loader illustrations; drawn = a simple built-in drawing
 //                        images: /local/myimg/    optional: your own washer.svg, dryer.svg and laundry-drum.webp (built-in pictures otherwise)
 // Cycles card only:      favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
 
 
-const SAMSUNG_CARD_VERSION = "1.0.0";
+const SAMSUNG_CARD_VERSION = "1.1.0";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -64,6 +66,14 @@ const Samsung = {
       if (h.states[`select.${p}_${probe}`]) return (card._found = p);
     }
     return null;
+  },
+  // the door's open/closed sensor (on = open), from the door option or found next to the machine's own entities
+  door(card) {
+    const d = card._config.door;
+    if (d === false || d === "none") return null;
+    if (d) return d;
+    const p = Samsung.prefix(card), states = card._hass?.states || {};
+    return [`binary_sensor.${p}_door_door`, `binary_sensor.${p}_door`].find(id => states[id]) || null;
   },
   st(card, id) { const s = card._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; },
   // the state as Home Assistant shows it, translations included ("53" -> "Heavy Duty", "rinse" -> "Rinsing")
@@ -117,7 +127,7 @@ const machineSVG = dryer => `<svg class="machine" viewBox="0 0 100 140" aria-hid
 </svg>`;
 
 const CSS = `
-:host { --fg:#ececec; --muted:#9a9a9a; --ok:#5fd38a; --cool:#6cc8ff; display:block; }
+:host { --fg:#ececec; --muted:#9a9a9a; --ok:#5fd38a; --cool:#6cc8ff; --warn:#ffb44f; display:block; }
 ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px solid #ffffff0f; border-radius:16px; box-shadow:none; padding:12px 14px 14px;
   color:var(--fg); font-family:var(--samsung-font,system-ui,-apple-system,"Segoe UI",sans-serif); }
 .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
@@ -125,7 +135,7 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .pill { margin-left:auto; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:#3a3a3a; color:var(--muted); }
 .pill.run { background:color-mix(in srgb, var(--c) 22%, #1f1f1f); color:var(--c); }
 .pill.cool { background:#16384a; color:var(--cool); } .pill.done { background:#1c4430; color:var(--ok); }
-.pill.bad { background:#4a1c1c; color:#ff8a8a; }
+.pill.bad { background:#4a1c1c; color:#ff8a8a; } .pill.warn { background:#4a3417; color:var(--warn); }
 .pic { position:relative; margin:0 auto; max-width:var(--maxw,440px); cursor:pointer; container-type:inline-size; aspect-ratio:var(--ratio,100/140); }
 .pic > img.machine { position:absolute; inset:0; width:100%; height:100%; filter:drop-shadow(0 6px 14px #0008); }
 .pic > svg.machine { position:absolute; inset:0; width:100%; height:100%; filter:drop-shadow(0 6px 14px #0008); }
@@ -145,7 +155,7 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .glass .shine { position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg,#ffffff30 0%,#ffffff08 30%,#ffffff00 45%),radial-gradient(circle,#00000000 55%,#00000080 100%); }
 .phase { position:absolute; left:50%; bottom:9%; transform:translateX(-50%); white-space:nowrap; font-weight:700; font-size:clamp(11px,3.2cqw,15px);
   padding:2px 10px; border-radius:999px; background:#000a; color:var(--c); opacity:0; transition:opacity .6s; }
-.on .phase, .fin .phase { opacity:1; } .fin .phase { color:var(--ok); } .cool .phase { color:var(--cool); }
+.on .phase, .fin .phase, .ajar .phase { opacity:1; } .ajar:not(.fin) .phase { color:var(--warn); } .fin .phase { color:var(--ok); } .cool .phase { color:var(--cool); }
 .ring { aspect-ratio:1; pointer-events:none; }
 .ring svg { width:100%; height:100%; transform:rotate(-90deg); overflow:visible; }
 .ring .track { fill:none; stroke:#00000022; stroke-width:2.4; }
@@ -159,7 +169,7 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .off .lcd .t { color:#555; } .fin .lcd .t { color:var(--ok); }
 .icon { width:9%; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; background:#000a; }
 .icon ha-icon { --mdc-icon-size:70%; width:70%; color:#9a9a9a; display:grid; place-items:center; }
-.icon.lit ha-icon { color:var(--c); }
+.icon.lit ha-icon { color:var(--c); } .icon.warn ha-icon { color:var(--warn); }
 .panel { position:absolute; left:10%; right:10%; bottom:9%; top:79.5%; border-radius:12px; background:#1b1d20e6;
   display:grid; align-content:center; gap:3px; padding:6px 12px; font-size:clamp(11px,2.9cqw,13.5px); box-shadow:inset 0 0 0 1px #ffffff12; }
 .row { display:flex; justify-content:space-between; gap:10px; }
@@ -273,17 +283,25 @@ class SamsungLaundryCard extends HTMLElement {
     const on = RUNNING_STATES.includes(state) || (state == null && st(`binary_sensor.${p}_running`)?.state === "on");
     const paused = on && state === "pause";
     const wrinkle = !washer && st(`binary_sensor.${p}_wrinkle_prevent_active`)?.state === "on";
-    const done = !on && (prog === "finish" || wrinkle);
+    // door sensor: "Ready to unload" holds from the end of a cycle until the door is opened
+    const doorId = Samsung.door(this), doorS = doorId ? st(doorId) : null, doorOpen = doorS?.state === "on";
+    if (doorS && progS) this._lastFinish(progS.entity_id, progS.last_changed);
+    const finishedAt = this._finishedAt || NaN;
+    const unload = !!doorS && !on && !doorOpen && (prog === "finish"
+      || (finishedAt > Date.parse(doorS.last_changed) && Date.now() - finishedAt < 24 * 3600e3));
+    const done = !on && (prog === "finish" || wrinkle || unload);
     const cool = (on && !washer && prog === "cooling") || wrinkle;
     const alarmS = st(`sensor.${p}_alarm_code`), alarm = alarmS && !["none", "None", "0"].includes(alarmS.state) ? alarmS.state : null;
     const phase = wrinkle ? "Wrinkle prevent" : progS && prog !== "idle" ? Samsung.show(this, progS) : "";
     card.classList.toggle("on", on); card.classList.toggle("paused", paused); card.classList.toggle("off", !on && !done);
-    card.classList.toggle("fin", done); card.classList.toggle("cool", cool);
+    card.classList.toggle("fin", done); card.classList.toggle("cool", cool); card.classList.toggle("ajar", !on && doorOpen);
 
     const pill = r.getElementById("pill");
-    pill.className = "pill" + (alarm ? " bad" : cool ? " cool" : on ? " run" : done ? " done" : "");
-    pill.textContent = alarm ? "Error" : paused ? "Paused" : on ? phase || "Running" : wrinkle ? "Wrinkle prevent" : done ? "Finished" : powered ? "On" : "Off";
-    r.getElementById("phase").textContent = paused ? "Paused" : done && !wrinkle ? "Finished" : phase;
+    pill.className = "pill" + (alarm ? " bad" : on && doorOpen ? " warn" : cool ? " cool" : on ? " run" : done ? " done" : doorOpen ? " warn" : "");
+    pill.textContent = alarm ? "Error" : on && doorOpen ? "Door open" : paused ? "Paused" : on ? phase || "Running" : wrinkle ? "Wrinkle prevent"
+      : unload ? "Ready to unload" : done ? "Finished" : doorOpen ? "Door open" : powered ? "On" : "Off";
+    r.getElementById("phase").textContent = paused ? "Paused" : wrinkle ? phase : unload ? "Ready to unload" : done ? "Finished"
+      : !on && doorOpen ? "Door open" : phase;
     r.getElementById("err").textContent = alarm ? `The ${c.title.toLowerCase()} reports alarm code ${alarm}.` : "";
 
     // timing: estimated_finish is a timestamp while running; completion_time (whole minutes left) is the fallback,
@@ -307,10 +325,16 @@ class SamsungLaundryCard extends HTMLElement {
     const wifi = r.getElementById("wifi");
     wifi.classList.toggle("lit", smart); wifi.title = smart ? "Smart Control on" : "Smart Control off";
     const door = r.getElementById("door"), lock = st(`binary_sensor.${p}_child_lock`)?.state === "on";
-    // no door sensor: the door is locked while a cycle is under way
-    door.querySelector("ha-icon").setAttribute("icon", on ? "mdi:lock" : lock ? "mdi:human-child" : "mdi:lock-open-variant");
-    door.classList.toggle("lit", on || lock);
-    door.title = on ? "Door locked (cycle running)" : lock ? "Child lock on" : "Door unlocked";
+    if (doorS) {
+      door.querySelector("ha-icon").setAttribute("icon", doorOpen ? "mdi:door-open" : on ? "mdi:lock" : "mdi:door-closed");
+      door.classList.toggle("lit", on && !doorOpen); door.classList.toggle("warn", doorOpen);
+      door.title = doorOpen ? "Door open" : on ? "Door closed and locked (cycle running)" : "Door closed";
+    } else {
+      // no door sensor: the door is locked while a cycle is under way
+      door.querySelector("ha-icon").setAttribute("icon", on ? "mdi:lock" : lock ? "mdi:human-child" : "mdi:lock-open-variant");
+      door.classList.toggle("lit", on || lock); door.classList.remove("warn");
+      door.title = on ? "Door locked (cycle running)" : lock ? "Child lock on" : "Door unlocked";
+    }
 
     // the cycle select shows the running cycle, and goes back to Normal (01) once a cycle ends
     const rows = [["Cycle", on || powered || done ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "—"]];
@@ -322,6 +346,20 @@ class SamsungLaundryCard extends HTMLElement {
     else if (!washer && st(`switch.${p}_wrinkle_prevent`)) rows.push(["Wrinkle prevent", st(`switch.${p}_wrinkle_prevent`).state === "on" ? "On" : "Off"]);
     r.getElementById("rows").innerHTML = rows.map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
     this._time();
+  }
+
+  // When the last cycle finished, from the progress sensor's history (the sensor only says "finish" for a few minutes).
+  // Looked up again each time the progress sensor changes.
+  async _lastFinish(id, key) {
+    if (this._finKey === key || !this._hass.callWS) return;
+    this._finKey = key;
+    try {
+      const res = await this._hass.callWS({ type: "history/history_during_period", entity_ids: [id], minimal_response: true,
+        no_attributes: true, significant_changes_only: false, start_time: new Date(Date.now() - 24 * 3600e3).toISOString() });
+      let at = NaN;
+      for (const row of res?.[id] || []) if ((row.s ?? row.state) === "finish") at = (row.lc ?? row.lu) * 1000 || Date.parse(row.last_changed);
+      if (this._finKey === key && at !== this._finishedAt) { this._finishedAt = at; this._render(); }
+    } catch (e) {}
   }
 
   _time() {
@@ -414,7 +452,7 @@ class SamsungCyclesCard extends HTMLElement {
   }
   _pick(k) {
     const r = this.shadowRoot;
-    if (k && (this._running || !this._remote)) {
+    if (k && (this._running || this._doorOpen || !this._remote)) {
       r.getElementById("note").animate([{ transform: "scale(1)" }, { transform: "scale(1.03)" }, { transform: "scale(1)" }], 300);
       return;
     }
@@ -445,14 +483,17 @@ class SamsungCyclesCard extends HTMLElement {
     if (sig !== this._sig) { this._sig = sig; this._buttons(options); }
     const running = RUNNING_STATES.includes(h.states[`sensor.${p}_machine_state`]?.state);
     this._remote = h.states[`binary_sensor.${p}_smart_control`]?.state === "on";
+    const doorId = Samsung.door(this);
+    this._doorOpen = !running && !!doorId && h.states[doorId]?.state === "on";
     this._running = running;
     if (!this._err || running) {
       this._err = false;
-      n.hidden = !running && this._remote;
+      n.hidden = !running && !this._doorOpen && this._remote;
       n.textContent = running ? `The ${name} is running. Pause or stop it before starting another cycle.`
+        : this._doorOpen ? `The ${name} door is open. Close it to start a cycle.`
         : `Smart Control is off. Turn the ${name} on, load it, and press Smart Control on the machine to start cycles from here.`;
     }
-    if (running) this._pick(null);
+    if (running || this._doorOpen) this._pick(null);
   }
 }
 if (!customElements.get("samsung-cycles-card")) customElements.define("samsung-cycles-card", SamsungCyclesCard);
