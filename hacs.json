@@ -1,0 +1,6 @@
+{
+  "name": "Samsung Washer & Dryer Card",
+  "filename": "samsung-laundry-card.js",
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}
