@@ -111,6 +111,10 @@ cycle_names:
 
 Cycles downloaded through the SmartThings app (such as Wool or Perm Press on the washer) already show by name.
 
+## Releasing an update
+
+Raise `SAMSUNG_CARD_VERSION` at the top of `samsung-laundry-card.js` and push to `main`. The **Release** workflow (`.github/workflows/release.yml`) then publishes a GitHub release tagged with that version, e.g. `v1.3.0`, and HACS offers it as an update. Pushes that don't change the version don't make a release.
+
 ## Licence
 
 MIT. Based on the hOn Washer & Dryer Card by [My Media Build](https://mymediabuild.uk) (MIT); their copyright notice is kept in `LICENSE`. Not affiliated with or endorsed by Samsung.

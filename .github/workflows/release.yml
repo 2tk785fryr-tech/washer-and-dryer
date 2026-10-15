@@ -1,0 +1,38 @@
+# Publishes a GitHub release (which HACS offers as an update) whenever
+# SAMSUNG_CARD_VERSION in samsung-laundry-card.js changes on main.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - samsung-laundry-card.js
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the card version
+        id: version
+        run: |
+          v=$(grep -oP 'SAMSUNG_CARD_VERSION = "\K[^"]+' samsung-laundry-card.js)
+          test -n "$v"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release if it's new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG is already released"
+            exit 0
+          fi
+          gh release create "$TAG" samsung-laundry-card.js --target "$GITHUB_SHA" --title "$TAG" --generate-notes
