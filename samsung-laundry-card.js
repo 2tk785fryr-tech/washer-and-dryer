@@ -17,6 +17,7 @@
 //   door: binary_sensor.washer_door       a door sensor (on = open). Default: binary_sensor.<entity>_door_door or _door if
 //                                         one exists; door: false turns it off
 //   body_colour: midnight_blue            the machine's colour: midnight_blue, or any hex colour such as "#1e2a44" (default white)
+//   unload_helper: input_boolean.x        backs up "clothes inside" if history is missing; default input_boolean.<washer|dryer>_unacknowledged
 //   door_hint: true                       "Open door to dry" when the machine is idle with the door shut (default: washer only)
 // Appliance card only:   max_width: 380px
 //                        style: photo | drawn    photo (default) = built-in front-loader illustrations; drawn = a simple built-in drawing
@@ -24,7 +25,7 @@
 // Cycles card only:      favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
 
 
-const SAMSUNG_CARD_VERSION = "1.3.0";
+const SAMSUNG_CARD_VERSION = "1.4.0";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -223,8 +224,21 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .credit { margin-top:10px; text-align:center; font-size:11.5px; color:var(--muted); }
 .credit a { color:var(--c); text-decoration:none; font-weight:600; }
 .credit a:hover { text-decoration:underline; }
+/* clothes left in the drum after a cycle: the laundry settles in a still heap at the bottom */
+.loaded .glass .fx { opacity:1; }
+.loaded .water, .loaded .heat { display:none; }
+.loaded .load { animation:none; top:auto; bottom:-30%; translate:-50% 0; width:118%; rotate:14deg; opacity:1;
+  -webkit-mask-image:linear-gradient(to top, #000 55%, transparent 72%); mask-image:linear-gradient(to top, #000 55%, transparent 72%); }
+.washer.loaded .load { filter:blur(1px) brightness(.72) contrast(1.05) saturate(.9); }   /* still wet */
+.dryer.loaded .load { filter:blur(1px) brightness(.95) saturate(.85); }
+.loaded .phase { opacity:1; color:var(--fg); bottom:auto; top:30%; white-space:normal; text-align:center; width:max-content; max-width:72%;
+  line-height:1.25; padding:4px 12px; border-radius:12px; } .loaded.fin .phase { color:var(--ok); }
+/* washer Self-Clean: water only, no laundry */
+.empty .load { display:none; }
 /* whites cycles: only white laundry in the drum */
 .whites .load { filter:blur(1.2px) grayscale(1) brightness(1.75) contrast(.75); opacity:1; }
+.dryer.loaded.whites .load { filter:blur(1px) grayscale(1) brightness(1.6) contrast(.75); }
+.washer.loaded.whites .load { filter:blur(1px) grayscale(1) brightness(1.35) contrast(.8); }
 /* steam cycles: fog and rising steam in the glass, wisps escaping over the top of the door */
 .steam { position:absolute; inset:0; border-radius:inherit; opacity:0; transition:opacity 1s; pointer-events:none;
   background:radial-gradient(circle at 50% 65%, #ffffff59, #ffffff26 75%); }
@@ -342,30 +356,37 @@ class SamsungLaundryCard extends HTMLElement {
     const on = RUNNING_STATES.includes(state) || (state == null && st(`binary_sensor.${p}_running`)?.state === "on");
     const paused = on && state === "pause";
     const wrinkle = !washer && st(`binary_sensor.${p}_wrinkle_prevent_active`)?.state === "on";
-    // door sensor: "Ready to unload" holds from the end of a cycle until the door is opened
+    // Clothes inside: any cycle ran and the door hasn't been opened since (washer Self-Clean leaves the drum empty).
+    // Recorded history answers it and survives restarts; the *_unacknowledged helper covers a gap in history.
     const doorId = Samsung.door(this), doorS = doorId ? st(doorId) : null, doorOpen = doorS?.state === "on";
-    if (doorS && progS) this._lastFinish(progS.entity_id, progS.last_changed);
-    const finishedAt = this._finishedAt || NaN;
-    const unload = !!doorS && !on && !doorOpen && (prog === "finish"
-      || (finishedAt > Date.parse(doorS.last_changed) && Date.now() - finishedAt < 24 * 3600e3));
-    const done = !on && (prog === "finish" || wrinkle || unload);
+    if (doorS && stateS) this._lastCycle(p, doorId, [stateS.last_changed, doorS.last_changed, progS?.last_changed].join());
+    const helperId = c.unload_helper === false ? null : c.unload_helper || `input_boolean.${c.appliance}_unacknowledged`;
+    const helperOn = !!helperId && h.states[helperId]?.state === "on";
+    const last = this._last, lastName = last?.cycle ? Samsung.cycle(this, last.cycle) : "";
+    const selfClean = n => /self[- ]?clean|drum clean/i.test(n || "");
+    const loaded = !!doorS && !on && !doorOpen && (last ? !last.opened && !(washer && selfClean(lastName))
+      : this._historyRead ? helperOn : prog === "finish" || helperOn);
+    const done = !on && (prog === "finish" || wrinkle || (loaded && (last?.finished ?? true)));
+    const loadText = washer ? "Wet clothes in the washer" : done ? "Dry clothes in the dryer" : "Clothes in the dryer";
     // a washer shut between cycles can't dry out, so suggest leaving the door open (once the laundry is out)
-    const dryHint = !!doorS && !on && !doorOpen && !done && (c.door_hint ?? washer) !== false;
+    const dryHint = !!doorS && !on && !doorOpen && !done && !loaded && (c.door_hint ?? washer) !== false;
     const cool = (on && !washer && prog === "cooling") || wrinkle;
     const alarmS = st(`sensor.${p}_alarm_code`), alarm = alarmS && !["none", "None", "0"].includes(alarmS.state) ? alarmS.state : null;
     const phase = wrinkle ? "Wrinkle prevent" : progS && prog !== "idle" ? Samsung.show(this, progS) : "";
     card.classList.toggle("on", on); card.classList.toggle("paused", paused); card.classList.toggle("off", !on && !done);
     // cycle effects: white laundry on a whites cycle, steam on a steam cycle (or while the machine reports a steaming phase)
     const cycleName = on ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "";
-    card.classList.toggle("whites", on && /white/i.test(cycleName));
-    card.classList.toggle("steamy", on && (/steam|wrinkle away/i.test(cycleName) || prog === "steaming"));
+    card.classList.toggle("whites", on ? /white/i.test(cycleName) : loaded && /white/i.test(lastName));
+    card.classList.toggle("steamy", on && (/steam|wrinkle away/i.test(cycleName) || prog === "steaming"));   // only while running
+    card.classList.toggle("empty", on && washer && selfClean(cycleName));
+    card.classList.toggle("loaded", loaded);
     card.classList.toggle("fin", done); card.classList.toggle("cool", cool); card.classList.toggle("ajar", !on && doorOpen); card.classList.toggle("hint", dryHint);
 
     const pill = r.getElementById("pill");
     pill.className = "pill" + (alarm ? " bad" : on && doorOpen ? " warn" : cool ? " cool" : on ? " run" : done ? " done" : doorOpen ? " warn" : "");
     pill.textContent = alarm ? "Error" : on && doorOpen ? "Door open" : paused ? "Paused" : on ? phase || "Running" : wrinkle ? "Wrinkle prevent"
-      : unload ? "Ready to unload" : done ? "Finished" : doorOpen ? "Door open" : powered ? "On" : "Off";
-    r.getElementById("phase").textContent = paused ? "Paused" : wrinkle ? phase : unload ? "Ready to unload" : done ? "Finished"
+      : loaded ? "Ready to unload" : done ? "Finished" : doorOpen ? "Door open" : powered ? "On" : "Off";
+    r.getElementById("phase").textContent = paused ? "Paused" : loaded ? loadText : wrinkle ? phase : done ? "Finished"
       : !on && doorOpen ? "Door open" : dryHint ? "Open door to dry" : phase;
     r.getElementById("err").textContent = alarm ? `The ${c.title.toLowerCase()} reports alarm code ${alarm}.` : "";
 
@@ -403,7 +424,7 @@ class SamsungLaundryCard extends HTMLElement {
     }
 
     // the cycle select shows the running cycle, and goes back to Normal (01) once a cycle ends
-    const rows = [["Cycle", on || powered || done ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "—"]];
+    const rows = [["Cycle", loaded && last?.cycle ? lastName : on || powered || done ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "—"]];
     const show = id => Samsung.show(this, st(id)) ?? "—";
     if (washer) rows.push(["Temp · Spin", `${show(`select.${p}_wash_temperature`)} · ${show(`select.${p}_spin_speed`)}`]);
     else rows.push(["Dry level", show(`select.${p}_dry_level`)]);
@@ -414,17 +435,35 @@ class SamsungLaundryCard extends HTMLElement {
     this._time();
   }
 
-  // When the last cycle finished, from the progress sensor's history (the sensor only says "finish" for a few minutes).
-  // Looked up again each time the progress sensor changes.
-  async _lastFinish(id, key) {
-    if (this._finKey === key || !this._hass.callWS) return;
-    this._finKey = key;
+  // The last cycle that ran, from Home Assistant's recorded history (which survives restarts; last_changed doesn't):
+  // when it ran, which cycle it was, whether it reached Finished, and whether the door has been opened since.
+  // Looked up again whenever the machine state, progress or door changes.
+  async _lastCycle(p, doorId, key) {
+    if (this._cycKey === key || !this._hass.callWS) return;
+    this._cycKey = key;
+    const ids = { state: `sensor.${p}_machine_state`, prog: `sensor.${p}_progress`, cycle: `select.${p}_cycle`, door: doorId };
     try {
-      const res = await this._hass.callWS({ type: "history/history_during_period", entity_ids: [id], minimal_response: true,
-        no_attributes: true, significant_changes_only: false, start_time: new Date(Date.now() - 24 * 3600e3).toISOString() });
-      let at = NaN;
-      for (const row of res?.[id] || []) if ((row.s ?? row.state) === "finish") at = (row.lc ?? row.lu) * 1000 || Date.parse(row.last_changed);
-      if (this._finKey === key && at !== this._finishedAt) { this._finishedAt = at; this._render(); }
+      const res = await this._hass.callWS({ type: "history/history_during_period", entity_ids: Object.values(ids), minimal_response: true,
+        no_attributes: true, significant_changes_only: false, start_time: new Date(Date.now() - 7 * 864e5).toISOString() });
+      // restarts show up as unavailable/unknown; skipping them joins the stretches on either side
+      const rows = id => (res?.[id] || []).map(x => ({ s: x.s ?? x.state, t: (x.lc ?? x.lu) * 1000 || Date.parse(x.last_changed) }))
+        .filter(x => x.s != null && !["unavailable", "unknown"].includes(x.s));
+      let start = NaN, end = NaN;
+      for (const x of rows(ids.state)) {
+        const running = RUNNING_STATES.includes(x.s);
+        if (running && (isNaN(start) || !isNaN(end))) { start = x.t; end = NaN; }
+        else if (!running && !isNaN(start) && isNaN(end)) end = x.t;
+      }
+      let last = null;
+      if (!isNaN(end)) {
+        let cycle = null;
+        // the cycle chosen when it started (the select can't change mid-cycle, and drops back to Normal as it ends)
+        for (const x of rows(ids.cycle)) if (x.t <= start + 30000) cycle = x.s;
+        last = { start, end, cycle,
+          finished: rows(ids.prog).some(x => x.s === "finish" && x.t >= start && x.t <= end + 15 * 60000),
+          opened: rows(ids.door).some(x => x.s === "on" && x.t > end) };
+      }
+      if (this._cycKey === key) { this._last = last; this._historyRead = true; this._render(); }
     } catch (e) {}
   }
 

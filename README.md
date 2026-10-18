@@ -11,10 +11,10 @@ Dashboard cards for Samsung washers and dryers connected through **[LocalThings]
 - **Time left** on the machine's display, counting down every second, with the percentage done underneath. Before a cycle starts it shows the selected cycle's length and "Ready".
 - **A progress ring round the door**, filled from the machine's own progress percentage: blue for the washer, orange for the dryer, light blue while the dryer cools down or runs wrinkle prevent, and green when the cycle is finished.
 - **The current phase** on the door glass: Weight sensing, Washing, Rinsing, Spinning, Drying, Cooling.
-- **Cycle effects in the drum:** only white laundry on a Whites cycle, and on a steam cycle (Steam Sanitize+, Steam Refresh, Wrinkle Away, or any time the machine reports a steaming phase) the glass fogs up, steam rolls inside it and wisps rise from the top of the door.
+- **Cycle effects in the drum:** only white laundry on a Whites cycle, and on a steam cycle (Steam Sanitize+, Steam Refresh, Wrinkle Away, or any time the machine reports a steaming phase) the glass fogs up, steam rolls inside it and wisps rise from the top of the door. Steam only shows while a cycle is running. Washer Self-Clean shows water and no laundry.
 - **Your machine's colour:** `body_colour: midnight_blue` (or any hex colour) recolours the built-in pictures.
 - **Cycle, temperature and spin speed** (washer) or **dry level** (dryer), plus the finish time. When the washer is idle it shows how many cycles are left before a drum clean; the dryer shows whether wrinkle prevent is on.
-- **Door open or closed**, from a door sensor if you have one (it finds `binary_sensor.<machine>_door_door` on its own). The door icon shows open, closed, or locked while a cycle runs, and "Door open" appears on the glass. After a cycle the card stays on **Ready to unload** until the door is opened, even after the machine goes back to idle. The cycles card won't start a cycle while the door is open. On the washer, if the door is shut while it's idle (and the laundry is out), "Open door to dry" appears on the glass as a reminder to let the drum dry.
+- **Door open or closed**, from a door sensor if you have one (it finds `binary_sensor.<machine>_door_door` on its own). The door icon shows open, closed, or locked while a cycle runs, and "Door open" appears on the glass. After any cycle ends with the door shut, the glass says **Wet clothes in the washer** or **Dry clothes in the dryer**, the label at the top says **Ready to unload**, and the laundry sits still at the bottom of the drum until the door is opened. Washer Self-Clean leaves the drum empty instead. This comes from Home Assistant's recorded history, so it survives restarts; `input_boolean.washer_unacknowledged` / `input_boolean.dryer_unacknowledged` (if you have them) back it up when there's no history. The cycles card won't start a cycle while the door is open. On the washer, if the door is shut while it's idle (and the laundry is out), "Open door to dry" appears on the glass as a reminder to let the drum dry.
 - **A Smart Control icon**, and an error message if the machine reports an alarm code.
 - **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume only appear when Smart Control is on; Stop works without it.
 - **A cycles card**: the machine's cycles as buttons. Tap one, confirm, and it starts.
@@ -38,7 +38,7 @@ The card only uses LocalThings entities. If you also have the machines in the co
 ### Manual
 
 1. Copy `samsung-laundry-card.js` to `config/www/samsung-laundry-card.js`.
-2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.3.0` as a **JavaScript module**, and reload your browser.
+2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.4.0` as a **JavaScript module**, and reload your browser.
 
 ## Use
 
@@ -83,6 +83,7 @@ The cards find your machines on their own: the washer is the LocalThings device 
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
 | `door` | both | Door sensor, `on` = open, e.g. `binary_sensor.laundry_room_samsung_washer_door_door`. Found automatically when it's named `<entity>_door_door` or `<entity>_door`. `false` turns it off |
 | `door_hint` | machine | Show "Open door to dry" when the machine is idle with the door shut. Default `true` for the washer, `false` for the dryer |
+| `unload_helper` | machine | An input_boolean that's on while laundry is waiting, used when there's no recorded history. Default `input_boolean.<washer or dryer>_unacknowledged`; `false` turns it off |
 | `cycle_names` | both | Names for cycle codes that would otherwise show as "Cycle 47", e.g. `{ "47": "Towels" }` |
 | `body_colour` | machine | The machine's colour: `midnight_blue` or any hex colour, e.g. `"#1d2840"`. Default white |
 | `max_width` | machine | How wide the machine can get, e.g. `380px` |
