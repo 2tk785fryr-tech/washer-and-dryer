@@ -1,31 +1,33 @@
 // Samsung laundry cards for Home Assistant - washer + dryer through the LocalThings integration (mbillow/localthings).
 // Adapted from the hOn Washer & Dryer Card by My Media Build (https://mymediabuild.uk), MIT licence.
 //
-//   type: custom:samsung-laundry-card     the machine, with a progress ring round the door, the time left on its display,
-//   appliance: washer                     the cycle, temperature/spin or dry level and the end time. Pause, Resume and
-//                                         Stop buttons appear while a cycle runs.
-//   type: custom:samsung-cycles-card      cycles as buttons; tap one, confirm, and it starts (needs Smart Control on).
-//   appliance: dryer
+//   type: custom:samsung-laundry-card       the machine: progress ring round the door, time left on its display, the cycle and
+//   appliance: washer                       its settings, the end time, Pause/Resume/Stop, quick toggles, last cycle and stats.
+//   type: custom:samsung-cycles-card        cycles as buttons; pick one, adjust its settings, start now or finish by a time.
+//   type: custom:samsung-laundry-pair-card  washer and dryer side by side in one card, with a shared status line.
 //
-// Options (both cards):
-//   appliance: washer | dryer             washer if left out
-//   entity: laundry_room_samsung_washer   the start of your entity IDs (sensor.<entity>_progress, select.<entity>_cycle, ...)
-//                                         optional: found automatically from the LocalThings entities when left out
-//   name: Washer                          card title
-//   colour: "#4fb3ff"                     accent colour
-//   cycle_names: { "47": "Shirts" }       names for cycle codes Home Assistant shows as raw codes
-//   door: binary_sensor.washer_door       a door sensor (on = open). Default: binary_sensor.<entity>_door_door or _door if
-//                                         one exists; door: false turns it off
-//   body_colour: midnight_blue            the machine's colour: midnight_blue, or any hex colour such as "#1e2a44" (default white)
-//   unload_helper: input_boolean.x        backs up "clothes inside" if history is missing; default input_boolean.<washer|dryer>_unacknowledged
-//   door_hint: true                       "Open door to dry" when the machine is idle with the door shut (default: washer only)
-// Appliance card only:   max_width: 380px
-//                        style: photo | drawn    photo (default) = built-in front-loader illustrations; drawn = a simple built-in drawing
-//                        images: /local/myimg/    optional: your own washer.svg, dryer.svg and laundry-drum.webp (built-in pictures otherwise)
-// Cycles card only:      favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
+// Everything can be set up in the card editor. Options (machine and cycles cards):
+//   appliance: washer | dryer               washer if left out
+//   device: <device id>                     the LocalThings washer or dryer (the editor's device picker). Found automatically if
+//                                           left out; the card finds every entity it needs on that device, renamed or not
+//   entities: { progress: sensor.x, ... }   override any entity the card found (see ROLES below for the names)
+//   entity: laundry_room_samsung_washer     older alternative to device: the start of the machine's entity IDs
+//   name: Washer                            card title
+//   colour: "#4fb3ff"                       accent colour
+//   cycle_names: { "47": "Shirts" }         names for cycle codes Home Assistant shows as raw codes
+//   door: binary_sensor.washer_door         optional add-on door sensor (on = open). Found automatically when it's named
+//                                           <machine>_door_door or <machine>_door; door: false turns it off
+//   unload_helper: input_boolean.x          optional: on while laundry is waiting; backs up "clothes inside" when there's no
+//                                           history. Default input_boolean.<washer|dryer>_unacknowledged if it exists
+// Machine card:  body_colour: midnight_blue (or any hex colour)   max_width: 380px   style: photo | drawn
+//                images: /local/myimg/ (your own washer.svg, dryer.svg, laundry-drum.webp)
+//                door_hint (washer: true)  toggles: true  summary: true  stats: true   (show or hide those parts)
+// Cycles card:   favourites: ["01", "53", ...]   cycle codes to show as buttons (default: every cycle the machine offers)
+// Pair card:     washer_device, dryer_device, washer_door, dryer_door, cycles: true (adds each machine's cycles card),
+//                title, and any machine-card option for both; washer: {...} / dryer: {...} for one machine only
 
 
-const SAMSUNG_CARD_VERSION = "1.4.0";
+const SAMSUNG_CARD_VERSION = "1.5.0";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -65,13 +67,52 @@ function machineImg(c, name) {
 }
 
 const DEFAULTS = {
-  washer: { title: "Washer", colour: "#4fb3ff", probe: "wash_temperature" },
-  dryer:  { title: "Dryer",  colour: "#ffb44f", probe: "dry_level" },
+  washer: { title: "Washer", colour: "#4fb3ff" },
+  dryer:  { title: "Dryer",  colour: "#ffb44f" },
 };
 // sensor.*_machine_state: idle | active | pause. Only active and pause mean a cycle is under way.
 const RUNNING_STATES = ["active", "pause"];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const isSelfClean = n => /self[- ]?clean|drum clean/i.test(n || "");
+
+// The entities the cards use, by role: [domain, LocalThings translation keys, entity-id endings].
+// The translation key survives renames; the ending is the fallback (and how the older `entity` prefix option works).
+const ROLES = {
+  state:      ["sensor", ["machine_state"], ["_machine_state"]],
+  progress:   ["sensor", ["progress"], ["_progress"]],
+  percent:    ["sensor", ["progress_percentage"], ["_progress_percent", "_progress_percentage"]],
+  finish:     ["sensor", ["finish_time"], ["_estimated_finish", "_finish_time"]],
+  remaining:  ["sensor", ["completion_minutes"], ["_completion_time", "_completion_minutes"]],
+  cycle:      ["select", [/^(washer_|dryer_)?cycle/], ["_cycle"]],
+  power:      ["binary_sensor", ["power_switch", "power_state"], ["_power"]],
+  running:    ["binary_sensor", ["cycle_active"], ["_running"]],
+  smart:      ["binary_sensor", ["remote_control"], ["_smart_control", "_remote_control"]],
+  child_lock: ["binary_sensor", ["child_lock"], ["_child_lock"]],
+  alarm:      ["sensor", ["alarm_code"], ["_alarm_code"]],
+  wrinkle_active: ["binary_sensor", ["wrinkle_prevent_active"], ["_wrinkle_prevent_active"]],
+  start:      ["button", ["start"], ["_start"]],
+  pause:      ["button", ["pause"], ["_pause"]],
+  stop:       ["button", ["stop"], ["_stop"]],
+  temperature: ["select", ["wash_temperature"], ["_wash_temperature"]],
+  spin:       ["select", ["spin_speed"], ["_spin_speed"]],
+  soil:       ["select", ["soil_level"], ["_soil_level"]],
+  rinse:      ["select", ["rinse_cycles"], ["_rinse_cycles"]],
+  dry_level:  ["select", ["dryer_dry_level", "dry_level"], ["_dry_level"]],
+  dry_time:   ["select", ["dry_time"], ["_dry_time"]],
+  finish_by:  ["time", ["delay_finish_at"], ["_finish_by"]],
+  delay:      ["number", ["delay_start_hours"], ["_delay_start"]],
+  energy:     ["sensor", ["energy_kwh"], ["_energy"]],
+  water:      ["sensor", ["water_liters"], ["_water_consumption"]],
+  drum_clean: ["sensor", ["drum_clean_cycles_remaining"], ["_drum_clean_due_in"]],
+  wrinkle:    ["switch", ["wrinkle_prevent"], ["_wrinkle_prevent"]],
+  damp:       ["switch", ["damp_alert"], ["_damp_alert"]],
+  buzzer:     ["select", ["buzzer_sound"], ["_buzzer_sound"]],
+};
+// the settings a cycle can be adjusted with before it starts, in the order they're shown
+const SETTINGS = { washer: [["temperature", "Temperature"], ["spin", "Spin"], ["soil", "Soil level"], ["rinse", "Rinses"]],
+                   dryer:  [["dry_level", "Dry level"], ["dry_time", "Dry time"]] };
+
 function setup(c) {
   c = { ...c, appliance: c.appliance || "washer" };   // the card picker adds cards with only a type line
   if (!DEFAULTS[c.appliance]) throw new Error("appliance must be washer or dryer");
@@ -79,36 +120,76 @@ function setup(c) {
   // cycle codes written without quotes in YAML arrive as numbers (01 -> 1), so turn them back into codes
   const code = k => typeof k === "number" ? String(k).padStart(2, "0") : String(k);
   const names = Object.fromEntries(Object.entries(c.cycle_names || {}).map(([k, v]) => [code(/^\d$/.test(k) ? +k : k).toLowerCase(), v]));
-  return { ...c, entity: c.entity || "", title: c.name || d.title, colour: c.colour || d.colour, cycle_names: names,
-    favourites: c.favourites ? c.favourites.map(code) : null,
+  return { ...c, entity: c.entity || "", device: c.device || "", entities: c.entities || {}, title: c.name || d.title, colour: c.colour || d.colour,
+    cycle_names: names, favourites: c.favourites ? c.favourites.map(code) : null,
     style: c.style === "drawn" ? "drawn" : "photo", images: c.images ? c.images.replace(/\/?$/, "/") : "" };
 }
 
-// Shared helpers for both cards. `card` has _config and _hass.
+// Shared helpers for every card. `card` has _config and _hass.
 const Samsung = {
-  // The entity prefix: from the config, or the first LocalThings machine of the right kind
-  // (a washer has select.<p>_wash_temperature, a dryer select.<p>_dry_level).
-  prefix(card) {
-    if (card._config.entity) return card._config.entity;
-    if (card._found) return card._found;
-    const h = card._hass, probe = DEFAULTS[card._config.appliance].probe;
-    const ents = h?.entities || {};
-    const ids = Object.keys(ents).filter(id => ents[id].platform === "localthings" && id.startsWith("sensor.") && id.endsWith("_progress"));
-    for (const id of ids) {
-      const p = id.slice(7, -9);
-      if (h.states[`select.${p}_${probe}`]) return (card._found = p);
-    }
-    return null;
+  // every entity the card uses, by role, for this card's machine (looked up again when the entity list changes)
+  ents(card) {
+    const h = card._hass, c = card._config; if (!h || !c) return null;
+    const sig = [c.device, c.entity, c.appliance, JSON.stringify(c.entities), Object.keys(h.entities || {}).length, Object.keys(h.states).length].join("|");
+    if (card._entsSig !== sig) { card._entsSig = sig; card._ents = Samsung.resolve(h, c); }
+    return card._ents;
   },
-  // the door's open/closed sensor (on = open), from the door option or found next to the machine's own entities
+  resolve(h, c) {
+    const reg = Object.values(h.entities || {});
+    let pool = null, prefix = c.entity || null;
+    if (c.device) pool = reg.filter(e => e.device_id === c.device);
+    else if (!prefix) {
+      // the first LocalThings machine of the right kind: a washer has a wash-temperature select, a dryer a dry-level one
+      const devs = {};
+      for (const e of reg) if (e.platform === "localthings" && e.device_id) (devs[e.device_id] ||= []).push(e);
+      for (const [dev, list] of Object.entries(devs)) {
+        const m = Samsung.match(h, list, null);
+        if (m.state && m.cycle && (c.appliance === "washer" ? m.temperature : m.dry_level && !m.temperature)) { pool = list; c._device = dev; break; }
+      }
+      if (!pool) {   // no entity registry to go on: look for the entity names LocalThings gives
+        const want = c.appliance === "washer" ? "wash_temperature" : "dry_level";
+        const id = Object.keys(h.states).find(id => id.startsWith("select.") && id.endsWith("_" + want)
+          && h.states[`sensor.${id.slice(7, -want.length - 1)}_machine_state`]);
+        if (id) prefix = id.slice(7, -want.length - 1);
+      }
+    }
+    if (!pool && !prefix) return null;
+    const m = Samsung.match(h, pool, prefix);
+    Object.assign(m, Object.fromEntries(Object.entries(c.entities || {}).filter(([, v]) => v)));
+    if (!m.state && !m.cycle) return null;
+    // the start of the machine's entity IDs, for finding an add-on door sensor named after it
+    m._prefix = prefix || (m.state || m.cycle).split(".")[1].replace(/_(machine_state|cycle)$/, "");
+    return m;
+  },
+  match(h, pool, prefix) {
+    const out = {};
+    for (const [role, [domain, keys, ends]] of Object.entries(ROLES)) {
+      if (!pool) { const id = ends.map(e => `${domain}.${prefix}${e}`).find(id => h.states[id]); if (id) out[role] = id; continue; }
+      const inDomain = pool.filter(e => e.entity_id.startsWith(domain + "."));
+      let hit = inDomain.find(e => e.translation_key && keys.some(k => k instanceof RegExp ? k.test(e.translation_key) : k === e.translation_key));
+      // shortest wins: sensor.x_energy rather than sensor.x_power_energy
+      if (!hit) hit = inDomain.filter(e => ends.some(s => e.entity_id.endsWith(s))).sort((a, b) => a.entity_id.length - b.entity_id.length)[0];
+      if (hit) out[role] = hit.entity_id;
+    }
+    return out;
+  },
+  id(card, role) { return Samsung.ents(card)?.[role] || null; },
+  // the state object for a role, or null when it's missing, unknown or unavailable
+  s(card, role) { return Samsung.st(card, Samsung.id(card, role)); },
+  st(card, id) { const s = id && card._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; },
+  // the add-on door sensor (on = open): the door option, or one named after the machine. Optional.
   door(card) {
     const d = card._config.door;
     if (d === false || d === "none") return null;
     if (d) return d;
-    const p = Samsung.prefix(card), states = card._hass?.states || {};
-    return [`binary_sensor.${p}_door_door`, `binary_sensor.${p}_door`].find(id => states[id]) || null;
+    const p = Samsung.ents(card)?._prefix, states = card._hass?.states || {};
+    return p ? [`binary_sensor.${p}_door_door`, `binary_sensor.${p}_door`].find(id => states[id]) || null : null;
   },
-  st(card, id) { const s = card._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; },
+  helper(card) {
+    const c = card._config;
+    if (c.unload_helper === false) return null;
+    return c.unload_helper || `input_boolean.${c.appliance}_unacknowledged`;
+  },
   // the state as Home Assistant shows it, translations included ("53" -> "Heavy Duty", "rinse" -> "Rinsing")
   show(card, s, value) {
     if (!s) return null;
@@ -120,15 +201,37 @@ const Samsung = {
     if (code == null) return "—";
     const own = card._config.cycle_names[String(code).toLowerCase()];
     if (own) return own;
-    const p = Samsung.prefix(card), s = card._hass?.states[`select.${p}_cycle`];
+    const s = card._hass?.states[Samsung.id(card, "cycle")];
     const name = s ? Samsung.show(card, s, code) : code;
     return /^[0-9a-f]{2}$/i.test(name) ? `Cycle ${name.toUpperCase()}` : name;
   },
   async press(card, which) {
-    const p = Samsung.prefix(card);
-    await card._hass.callService("button", "press", {}, { entity_id: `button.${p}_${which}` });
+    const id = Samsung.id(card, which);
+    if (!id) throw new Error(`this machine has no ${which} button`);
+    await card._hass.callService("button", "press", {}, { entity_id: id });
+  },
+  async choose(card, role, option) {
+    await card._hass.callService("select", "select_option", { option }, { entity_id: Samsung.id(card, role) });
+  },
+  // choose a cycle, wait for the machine to confirm it (so Start doesn't run the old one), then press Start
+  async startCycle(card, code) {
+    const sel = Samsung.id(card, "cycle");
+    if (card._hass.states[sel]?.state !== code) await Samsung.choose(card, "cycle", code);
+    for (let i = 0; i < 20 && card._hass.states[sel]?.state !== code; i++) await sleep(250);
+    await Samsung.press(card, "start");
   },
 };
+
+const fmt = s => { s = Math.max(0, Math.round(s));
+  return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const hhmm = d => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+// "3:02 PM" today, "Sat 3:02 PM" this week, "Oct 12" before that
+const when = t => { const d = new Date(t), now = new Date();
+  if (d.toDateString() === now.toDateString()) return hhmm(d);
+  if (now - d < 6 * 864e5) return d.toLocaleDateString([], { weekday: "short" }) + " " + hhmm(d);
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }); };
+const duration = ms => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? `${m % 60} min` : ""}`.trim(); };
+const num = (v, d = 1) => { const x = parseFloat(v); return isNaN(x) ? null : +x.toFixed(d); };
 
 const GEOM = {
   photo: {
@@ -261,33 +364,79 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 @keyframes spin { to { transform:rotate(360deg); } }
 @keyframes pulse { 50% { opacity:.35; } }
 @media (prefers-reduced-motion:reduce) { .load,.water,.heat,.steam i,.plume i { animation:none !important; } }
+/* the door swung open on its left hinge (needs a door sensor): the opening behind it, and the door itself */
+.opening, .leaf { position:absolute; aspect-ratio:1; translate:-50% -50%; border-radius:50%; opacity:0; pointer-events:none; }
+.opening { background:radial-gradient(circle, #15181c 0 50%, #262b31 58%, #3d434a 64%, #5a6168 70%, #858c93 75%, var(--trim) 77%, var(--trim) 100%);
+  box-shadow:inset 0 10px 26px #000c; transition:opacity .3s; }
+.opening::after { content:""; position:absolute; inset:24%; border-radius:50%;
+  background:radial-gradient(circle, #ffffff10 1px, transparent 1.6px) 0 0/9% 9%; }   /* the drum's holes */
+.leaf { overflow:hidden; transform-origin:0% 50%; transform:perspective(900px) rotateY(0deg); filter:drop-shadow(-4px 8px 10px #000a);
+  transition:transform .8s cubic-bezier(.3,.7,.2,1), opacity .25s; }
+.leaf img { position:absolute; max-width:none; }
+.leaf.css { background:radial-gradient(circle, #2b3036 0 64%, #9aa1a9 66%, #e6e9ec 74%, #8a9198 78%, transparent 79%); }
+.open .opening, .open .leaf { opacity:1; }
+.open .leaf { transform:perspective(900px) rotateY(-70deg); }
+.open .ring svg, .open .glass .fx, .open .steam, .open .plume { opacity:0 !important; }
+/* the drum's speed follows the phase: slow while weighing, steady washing, fast spinning, gentle cooling */
+.glass .water { transition:top 1.5s; }
+.washer[data-phase="weightsensing"] .load { animation-duration:7s; }
+.washer[data-phase="wash"] .load, .washer[data-phase="prewash"] .load { animation-duration:2.8s; }
+.washer[data-phase="rinse"] .load { animation-duration:3.4s; }
+.washer[data-phase="spin"] .load { animation-duration:.45s; filter:blur(2.6px) brightness(.8) saturate(.6); }
+.washer.whites[data-phase="spin"] .load { filter:blur(2.6px) grayscale(1) brightness(1.6) contrast(.75); }
+.washer[data-phase="spin"] .water { top:90%; } .washer[data-phase="predrain"] .water { top:82%; }
+.dryer[data-phase="drying"] .load { animation-duration:3.4s; }
+.dryer[data-phase="cooling"] .load { animation-duration:5s; }
+.dryer[data-phase="steaming"] .load { animation-duration:4.5s; }
+/* drum-clean reminder, quick toggles, last cycle and stats */
+.banner { display:flex; align-items:center; gap:10px; margin:-2px 0 10px; padding:8px 10px; border-radius:12px; background:#2c2615;
+  border:1px solid #ffb44f55; font-size:13px; }
+.banner[hidden] { display:none; }
+.banner span { flex:1; } .banner small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+.banner button { font:600 13px inherit; font-family:inherit; border:none; border-radius:999px; padding:7px 12px; background:var(--warn); color:#000; cursor:pointer; }
+.banner button:disabled { background:#4a4a4a; color:#999; cursor:default; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
+.chips:empty { display:none; }
+.chip { display:flex; align-items:center; gap:5px; font:500 12.5px inherit; font-family:inherit; color:var(--muted); background:#333;
+  border:1px solid #ffffff12; border-radius:999px; padding:5px 11px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.chip ha-icon { --mdc-icon-size:16px; width:16px; height:16px; }
+.chip.on { color:var(--fg); background:color-mix(in srgb, var(--c) 24%, #2a2a2a); border-color:color-mix(in srgb, var(--c) 55%, transparent); }
+.info { margin-top:10px; display:grid; gap:5px; font-size:12.5px; color:var(--muted); text-align:center; line-height:1.35; }
+.info div:empty { display:none; }
+.info b { color:var(--fg); font-weight:600; }
+.embedded { background:none; border:none; padding:0; }
+.embedded .credit { display:none; }
 `;
-
-const fmt = s => { s = Math.max(0, Math.round(s));
-  return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
-const hhmm = d => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 class SamsungLaundryCard extends HTMLElement {
   setConfig(c) {
-    this._config = setup(c); this._found = null;
-    if (this.isConnected && !this.shadowRoot) { this._build(); this._render(); }
+    this._config = setup(c); this._entsSig = null; this._cycKey = null;
+    if (this.shadowRoot) { this.shadowRoot.innerHTML = ""; this._built = false; }
+    if (this.isConnected) { this._build(); this._render(); }
   }
-  getCardSize() { return 10; }
+  getCardSize() { return 11; }
   getGridOptions() { return { columns: 6, min_columns: 4 }; }   // sections view: half width, height follows the machine
   static getConfigElement() { return document.createElement("samsung-laundry-card-editor"); }
   static getStubConfig() { return { appliance: "washer" }; }
   connectedCallback() {
-    if (!this.shadowRoot && this._config) { this._build(); this._render(); }
+    if (!this._built && this._config) { this._build(); this._render(); }
     clearInterval(this._tick); this._tick = setInterval(() => this._time(), 1000);
   }
   disconnectedCallback() { clearInterval(this._tick); }
-  set hass(h) { this._hass = h; if (this.shadowRoot) this._render(); }
+  set hass(h) { this._hass = h; if (this._built) this._render(); }
 
   _build() {
     const c = this._config, dryer = c.appliance === "dryer", g = GEOM[c.style][c.appliance];
-    const r = this.attachShadow({ mode: "open" });
+    const r = this.shadowRoot || this.attachShadow({ mode: "open" });
+    const img = machineImg(c, dryer ? "dryer.svg" : "washer.svg"), b = bodyColour(c);
+    // the door, cut out of the machine picture, for swinging open: positioned so the crop lines up with the door
+    const ratio = g.ratio.split("/"), R = ratio[1] / ratio[0], d = g.ring.d;
+    const leaf = c.style === "photo"
+      ? `<div class="leaf" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${d}%"><img alt="" src="${esc(img)}"
+          style="width:${10000 / d}%;left:${-(g.ring.x / d * 100 - 50)}%;top:${-(g.ring.y * R / d * 100 - 50)}%"></div>`
+      : `<div class="leaf css" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${d}%"></div>`;
     r.innerHTML = `<style>${CSS}</style>
-    <ha-card class="${c.appliance} ${c.style}" style="--c:${esc(c.colour)}">
+    <ha-card class="${c.appliance} ${c.style}${c.embedded ? " embedded" : ""}" style="--c:${esc(c.colour)};--trim:${b ? tone(b, .08) : "#eceef0"}">
       <div class="head"><span class="name">${esc(c.title)}</span><span class="pill" id="pill">Off</span></div>
       <div class="ctl" id="ctl" hidden>
         <button id="pause"><ha-icon icon="mdi:pause"></ha-icon>Pause</button>
@@ -295,36 +444,45 @@ class SamsungLaundryCard extends HTMLElement {
         <button id="stop"><ha-icon icon="mdi:stop"></ha-icon>Stop</button>
       </div>
       <div class="ask" id="ask" hidden><span id="askT"></span><button id="askNo">Cancel</button><button class="go" id="askYes">Stop</button></div>
+      <div class="banner" id="drum" hidden><span>Drum clean due<small id="drumT"></small></span><button id="drumGo">Start Self-Clean</button></div>
       <div class="err" id="err"></div>
       <div class="pic" id="pic" style="--ratio:${g.ratio};--drum:url('${esc(honImg(c, "laundry-drum.webp"))}');${c.max_width ? `--maxw:${esc(c.max_width)}` : ""}">
-        ${c.style === "photo" ? `<img class="machine" src="${esc(machineImg(c, dryer ? "dryer.svg" : "washer.svg"))}" alt="">` : machineSVG(dryer, bodyColour(c))}
+        ${c.style === "photo" ? `<img class="machine" src="${esc(img)}" alt="">` : machineSVG(dryer, b)}
+        <div class="opening" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${d}%"></div>
         <div class="at glass" style="left:${g.glass.x}%;top:${g.glass.y}%;width:${g.glass.w}%;height:${g.glass.h * (c.style === "drawn" ? 1.4 * 100 / 140 : 1)}%;border-radius:${g.glass.r}">
           <div class="fx"><div class="load"></div><div class="${dryer ? "heat" : "water"}"></div></div>
           <div class="steam"><i></i><i></i><i></i><i></i><i></i><i></i></div>
           <div class="shine"></div>
-          <div class="phase" id="phase"></div>
         </div>
-        <div class="at ring" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${g.ring.d}%">
+        <div class="at ring" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${d}%">
           <div class="plume"><i></i><i></i><i></i><i></i><i></i></div>
           <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="48" pathLength="100"/>
             <circle class="bar" id="bar" cx="50" cy="50" r="48" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
         </div>
+        ${leaf}
+        <div class="at glass label" style="left:${g.glass.x}%;top:${g.glass.y}%;width:${g.glass.w}%;height:${g.glass.h * (c.style === "drawn" ? 1.4 * 100 / 140 : 1)}%;border-radius:${g.glass.r};overflow:visible;background:none;pointer-events:none">
+          <div class="phase" id="phase"></div></div>
         <div class="lcd" style="left:${g.lcd.x}%;top:${g.lcd.y}%;width:${g.lcd.w}%;height:${g.lcd.h}%"><span class="t" id="lcd">--:--</span><span class="s" id="lcdS"></span></div>
         <div class="at icon" id="wifi" style="left:${g.wifi.x}%;top:${g.wifi.y}%" title="Smart Control"><ha-icon icon="mdi:wifi"></ha-icon></div>
         <div class="at icon" id="door" style="left:${g.door.x}%;top:${g.door.y}%"><ha-icon icon="mdi:lock-open-variant"></ha-icon></div>
         <div class="panel" id="rows"></div>
       </div>
+      <div class="chips" id="chips"></div>
+      <div class="info"><div id="summary"></div><div id="stats"></div></div>
       <div class="credit">Based on the hOn card by <a href="https://mymediabuild.uk/home-assistant-washer-dryer-card/" target="_blank" rel="noopener">My Media Build</a></div>
     </ha-card>`;
+    this._built = true; this._chipSig = null;
     // LocalThings buttons: start = Run (also resumes a paused cycle), pause = Pause, stop = Ready (cancels the cycle).
-    r.getElementById("pause").addEventListener("click", () => this._send("pause"));
-    r.getElementById("resume").addEventListener("click", () => this._send("start"));
+    r.getElementById("pause").addEventListener("click", () => this._send(() => Samsung.press(this, "pause")));
+    r.getElementById("resume").addEventListener("click", () => this._send(() => Samsung.press(this, "start")));
     r.getElementById("stop").addEventListener("click", () => this._ask(true));
     r.getElementById("askNo").addEventListener("click", () => this._ask(false));
-    r.getElementById("askYes").addEventListener("click", () => { this._ask(false); this._send("stop"); });
+    r.getElementById("askYes").addEventListener("click", () => { this._ask(false); this._send(() => Samsung.press(this, "stop")); });
+    r.getElementById("drumGo").addEventListener("click", () => { if (this._selfClean) this._send(() => Samsung.startCycle(this, this._selfClean)); });
+    r.getElementById("chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) this._toggle(b.dataset.role); });
     r.getElementById("pic").addEventListener("click", () => {
-      const p = Samsung.prefix(this);
-      if (p) this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: `sensor.${p}_progress` }, bubbles: true, composed: true }));
+      const id = Samsung.id(this, "progress") || Samsung.id(this, "state");
+      if (id) this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: id }, bubbles: true, composed: true }));
     });
   }
 
@@ -333,53 +491,58 @@ class SamsungLaundryCard extends HTMLElement {
     r.getElementById("ask").hidden = !show;
     if (show) r.getElementById("askT").textContent = `Stop the ${this._config.title.toLowerCase()}? This cancels the current cycle.`;
   }
-  async _send(which) {
-    const r = this.shadowRoot;
-    r.getElementById("err").textContent = "";
-    if (!Samsung.prefix(this)) { r.getElementById("err").textContent = "Couldn't find this machine in Home Assistant. Check the entity option."; return; }
-    try { await Samsung.press(this, which); }
-    catch (e) { r.getElementById("err").textContent = `Couldn't send that: ${e.message || e}`; }
+  async _send(fn) {
+    const err = this.shadowRoot.getElementById("err");
+    err.textContent = "";
+    try { await fn(); } catch (e) { err.textContent = `Couldn't send that: ${e.message || e}`; }
+  }
+  // quick toggles: switches flip, the buzzer select swaps between its two options
+  _toggle(role) {
+    const s = Samsung.s(this, role); if (!s) return;
+    if (role === "buzzer") {
+      const opts = s.attributes.options || [], next = opts.find(o => o !== s.state);
+      if (next != null) this._send(() => Samsung.choose(this, role, next));
+    } else this._send(() => this._hass.callService("switch", "toggle", {}, { entity_id: s.entity_id }));
   }
 
   _render() {
-    const r = this.shadowRoot, h = this._hass; if (!r || !h) return;
-    const c = this._config, washer = c.appliance === "washer", p = Samsung.prefix(this);
-    const card = r.querySelector("ha-card");
-    if (!p) {
-      r.getElementById("err").textContent = `Couldn't find a Samsung ${c.appliance} from LocalThings. Add the entity option, e.g. entity: laundry_room_samsung_${c.appliance}`;
+    const r = this.shadowRoot, h = this._hass; if (!r || !h || !this._built) return;
+    const c = this._config, washer = c.appliance === "washer", card = r.querySelector("ha-card");
+    if (!Samsung.ents(this)) {
+      r.getElementById("err").textContent = `Couldn't find a Samsung ${c.appliance} from LocalThings. Pick it in the card editor (Machine).`;
+      this.status = "Not found";
       return;
     }
-    const st = id => Samsung.st(this, id);
-    const stateS = st(`sensor.${p}_machine_state`), progS = st(`sensor.${p}_progress`);
-    const state = stateS?.state, prog = progS?.state;
-    const powered = st(`binary_sensor.${p}_power`)?.state === "on";
-    const on = RUNNING_STATES.includes(state) || (state == null && st(`binary_sensor.${p}_running`)?.state === "on");
+    const S = role => Samsung.s(this, role);
+    const stateS = S("state"), progS = S("progress"), state = stateS?.state, prog = progS?.state;
+    const powered = S("power")?.state === "on";
+    const on = RUNNING_STATES.includes(state) || (state == null && S("running")?.state === "on");
     const paused = on && state === "pause";
-    const wrinkle = !washer && st(`binary_sensor.${p}_wrinkle_prevent_active`)?.state === "on";
-    // Clothes inside: any cycle ran and the door hasn't been opened since (washer Self-Clean leaves the drum empty).
-    // Recorded history answers it and survives restarts; the *_unacknowledged helper covers a gap in history.
-    const doorId = Samsung.door(this), doorS = doorId ? st(doorId) : null, doorOpen = doorS?.state === "on";
-    if (doorS && stateS) this._lastCycle(p, doorId, [stateS.last_changed, doorS.last_changed, progS?.last_changed].join());
-    const helperId = c.unload_helper === false ? null : c.unload_helper || `input_boolean.${c.appliance}_unacknowledged`;
-    const helperOn = !!helperId && h.states[helperId]?.state === "on";
+    const wrinkle = !washer && S("wrinkle_active")?.state === "on";
+    // History drives the last cycle, its summary, the stats and "clothes inside" (it survives restarts).
+    const doorId = Samsung.door(this), doorS = doorId ? Samsung.st(this, doorId) : null, doorOpen = doorS?.state === "on";
+    if (stateS) this._history([stateS.last_changed, doorS?.last_changed, progS?.last_changed].join());
+    const helperId = Samsung.helper(this), helperOn = !!helperId && h.states[helperId]?.state === "on";
     const last = this._last, lastName = last?.cycle ? Samsung.cycle(this, last.cycle) : "";
-    const selfClean = n => /self[- ]?clean|drum clean/i.test(n || "");
-    const loaded = !!doorS && !on && !doorOpen && (last ? !last.opened && !(washer && selfClean(lastName))
+    // Clothes inside: a cycle ran and the door hasn't opened since (washer Self-Clean leaves the drum empty).
+    // Only with a door sensor; the *_unacknowledged helper covers a gap in history.
+    const loaded = !!doorS && !on && !doorOpen && (last ? !last.opened && !(washer && isSelfClean(lastName))
       : this._historyRead ? helperOn : prog === "finish" || helperOn);
     const done = !on && (prog === "finish" || wrinkle || (loaded && (last?.finished ?? true)));
     const loadText = washer ? "Wet clothes in the washer" : done ? "Dry clothes in the dryer" : "Clothes in the dryer";
     // a washer shut between cycles can't dry out, so suggest leaving the door open (once the laundry is out)
     const dryHint = !!doorS && !on && !doorOpen && !done && !loaded && (c.door_hint ?? washer) !== false;
     const cool = (on && !washer && prog === "cooling") || wrinkle;
-    const alarmS = st(`sensor.${p}_alarm_code`), alarm = alarmS && !["none", "None", "0"].includes(alarmS.state) ? alarmS.state : null;
+    const alarmS = S("alarm"), alarm = alarmS && !["none", "None", "0"].includes(alarmS.state) ? alarmS.state : null;
     const phase = wrinkle ? "Wrinkle prevent" : progS && prog !== "idle" ? Samsung.show(this, progS) : "";
+    const cycleName = on ? Samsung.cycle(this, S("cycle")?.state) : "";
+    card.dataset.phase = on && !paused ? prog || "" : "";
     card.classList.toggle("on", on); card.classList.toggle("paused", paused); card.classList.toggle("off", !on && !done);
-    // cycle effects: white laundry on a whites cycle, steam on a steam cycle (or while the machine reports a steaming phase)
-    const cycleName = on ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "";
+    // cycle effects: white laundry on a whites cycle, steam on a steam cycle (or a steaming phase), water only on Self-Clean
     card.classList.toggle("whites", on ? /white/i.test(cycleName) : loaded && /white/i.test(lastName));
     card.classList.toggle("steamy", on && (/steam|wrinkle away/i.test(cycleName) || prog === "steaming"));   // only while running
-    card.classList.toggle("empty", on && washer && selfClean(cycleName));
-    card.classList.toggle("loaded", loaded);
+    card.classList.toggle("empty", on && washer && isSelfClean(cycleName));
+    card.classList.toggle("loaded", loaded); card.classList.toggle("open", doorOpen);
     card.classList.toggle("fin", done); card.classList.toggle("cool", cool); card.classList.toggle("ajar", !on && doorOpen); card.classList.toggle("hint", dryHint);
 
     const pill = r.getElementById("pill");
@@ -390,19 +553,23 @@ class SamsungLaundryCard extends HTMLElement {
       : !on && doorOpen ? "Door open" : dryHint ? "Open door to dry" : phase;
     r.getElementById("err").textContent = alarm ? `The ${c.title.toLowerCase()} reports alarm code ${alarm}.` : "";
 
-    // timing: estimated_finish is a timestamp while running; completion_time (whole minutes left) is the fallback,
+    // timing: estimated finish is a timestamp while running; completion time (whole minutes left) is the fallback,
     // and while idle it's the selected cycle's length, like the machine's own display
-    const rem = st(`sensor.${p}_completion_time`);
-    let end = Date.parse(st(`sensor.${p}_estimated_finish`)?.state || "");
+    const rem = S("remaining");
+    let end = Date.parse(S("finish")?.state || "");
     if ((isNaN(end) || paused) && rem) {
       const key = rem.last_updated + rem.state + paused;
       if (this._remKey !== key) { this._remKey = key; this._remEnd = Date.now() + parseFloat(rem.state) * 60000; }
       end = this._remEnd;
     }
-    const pct = parseFloat(st(`sensor.${p}_progress_percent`)?.state);
+    const pct = parseFloat(S("percent")?.state);
     this._t = { on, paused, done, end, pct: isNaN(pct) ? null : pct, ready: powered && !on && !done, frozen: paused ? parseFloat(rem?.state) * 60 : NaN };
+    // one line for the pair card's header
+    const left = isNaN(end) ? null : Math.max(0, Math.round((end - Date.now()) / 60000));
+    this.status = alarm ? "Error" : paused ? "Paused" : on ? `${phase || "Running"}${left != null ? `, ${duration(left * 60000)} left` : ""}`
+      : loaded ? "Ready to unload" : done ? "Finished" : doorOpen ? "Door open" : powered ? "On" : "Off";
 
-    const smart = st(`binary_sensor.${p}_smart_control`)?.state === "on";
+    const smart = S("smart")?.state === "on";
     r.getElementById("ctl").hidden = !on;
     r.getElementById("pause").hidden = !on || paused || !smart;   // Run and Pause need Smart Control on; Stop works without it
     r.getElementById("resume").hidden = !paused || !smart;
@@ -410,7 +577,7 @@ class SamsungLaundryCard extends HTMLElement {
     if (!on) this._ask(false);
     const wifi = r.getElementById("wifi");
     wifi.classList.toggle("lit", smart); wifi.title = smart ? "Smart Control on" : "Smart Control off";
-    const door = r.getElementById("door"), lock = st(`binary_sensor.${p}_child_lock`)?.state === "on";
+    const door = r.getElementById("door"), lock = S("child_lock")?.state === "on";
     if (doorS) {
       door.querySelector("ha-icon").setAttribute("icon", doorOpen ? "mdi:door-open" : on ? "mdi:lock" : "mdi:door-closed");
       door.classList.toggle("lit", on && !doorOpen); door.classList.toggle("warn", doorOpen || dryHint);
@@ -423,48 +590,133 @@ class SamsungLaundryCard extends HTMLElement {
       door.title = on ? "Door locked (cycle running)" : lock ? "Child lock on" : "Door unlocked";
     }
 
+    // drum-clean reminder: when the washer's countdown reaches zero, offer Self-Clean (needs Smart Control, door shut)
+    const due = washer ? num(S("drum_clean")?.state, 0) : null;
+    const options = S("cycle")?.attributes?.options || [];
+    this._selfClean = options.find(o => isSelfClean(Samsung.cycle(this, o))) || null;
+    const drum = r.getElementById("drum");
+    drum.hidden = !(due != null && due <= 0 && !on);
+    if (!drum.hidden) {
+      const go = r.getElementById("drumGo");
+      go.hidden = !this._selfClean; go.disabled = !smart || doorOpen;
+      r.getElementById("drumT").textContent = !smart ? "Turn the washer on and press Smart Control to start it from here."
+        : doorOpen ? "Close the door to start it." : "Run Self-Clean with the drum empty.";
+    }
+
     // the cycle select shows the running cycle, and goes back to Normal (01) once a cycle ends
-    const rows = [["Cycle", loaded && last?.cycle ? lastName : on || powered || done ? Samsung.cycle(this, st(`select.${p}_cycle`)?.state) : "—"]];
-    const show = id => Samsung.show(this, st(id)) ?? "—";
-    if (washer) rows.push(["Temp · Spin", `${show(`select.${p}_wash_temperature`)} · ${show(`select.${p}_spin_speed`)}`]);
-    else rows.push(["Dry level", show(`select.${p}_dry_level`)]);
+    const rows = [["Cycle", loaded && last?.cycle ? lastName : on || powered || done ? Samsung.cycle(this, S("cycle")?.state) : "—"]];
+    const show = role => Samsung.show(this, S(role)) ?? "—";
+    if (washer) rows.push(["Temp · Spin", `${show("temperature")} · ${show("spin")}`]);
+    else rows.push(["Dry level", show("dry_level")]);
     if (on) rows.push(["Ends", isNaN(end) ? "—" : hhmm(new Date(end))]);
-    else if (washer && st(`sensor.${p}_drum_clean_due_in`)) rows.push(["Drum clean in", `${st(`sensor.${p}_drum_clean_due_in`).state} cycles`]);
-    else if (!washer && st(`switch.${p}_wrinkle_prevent`)) rows.push(["Wrinkle prevent", st(`switch.${p}_wrinkle_prevent`).state === "on" ? "On" : "Off"]);
+    else if (washer && due != null) rows.push(["Drum clean in", due <= 0 ? "Due now" : `${due} cycles`]);
+    else if (!washer && S("wrinkle")) rows.push(["Wrinkle prevent", S("wrinkle").state === "on" ? "On" : "Off"]);
     r.getElementById("rows").innerHTML = rows.map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
+
+    this._chips();
+    this._info(on);
     this._time();
+    this._onStatus?.();
   }
 
-  // The last cycle that ran, from Home Assistant's recorded history (which survives restarts; last_changed doesn't):
-  // when it ran, which cycle it was, whether it reached Finished, and whether the door has been opened since.
-  // Looked up again whenever the machine state, progress or door changes.
-  async _lastCycle(p, doorId, key) {
+  // quick toggles under the machine: wrinkle prevent and damp alert (dryer), the end-of-cycle sound (both)
+  _chips() {
+    const c = this._config, list = [];
+    if (c.toggles !== false) {
+      const add = (role, label, iconOn, iconOff) => { const s = Samsung.s(this, role); if (s) list.push([role, label, s.state === "on", iconOn, iconOff]); };
+      add("wrinkle", "Wrinkle prevent", "mdi:iron", "mdi:iron-outline");
+      add("damp", "Damp alert", "mdi:water-alert", "mdi:water-alert-outline");
+      add("buzzer", "Sound", "mdi:volume-high", "mdi:volume-off");
+    }
+    const sig = JSON.stringify(list);
+    if (sig === this._chipSig) return;
+    this._chipSig = sig;
+    this.shadowRoot.getElementById("chips").innerHTML = list.map(([role, label, isOn, a, b]) =>
+      `<button class="chip${isOn ? " on" : ""}" data-role="${role}" title="${esc(label)}: ${isOn ? "on" : "off"}"><ha-icon icon="${isOn ? a : b}"></ha-icon>${esc(label)}</button>`).join("");
+  }
+
+  // last cycle (name, how long, energy and water used, when it ended) and this week's stats
+  _info(on) {
+    const c = this._config, r = this.shadowRoot, last = this._last, st = this._stats;
+    let summary = "";
+    if (c.summary !== false && last && !on) {
+      const bits = [`<b>${esc(Samsung.cycle(this, last.cycle))}</b>`, duration(last.end - last.start)];
+      if (last.energy > 0) bits.push(`${last.energy < 0.1 ? "<0.1" : last.energy.toFixed(1)} kWh`);
+      if (last.water > 0) bits.push(`${+last.water.toFixed(1)} ${esc(last.waterUnit || "")}`.trim());
+      bits.push(`ended ${when(last.end)}`);
+      summary = `Last cycle: ${bits.join(" · ")}`;
+    }
+    let stats = "";
+    if (c.stats !== false && st) {
+      const bits = [`<b>${st.week}</b> load${st.week === 1 ? "" : "s"} this week`];
+      if (st.top) bits.push(`mostly ${esc(st.top)}`);
+      if (st.month != null) bits.push(`${st.month.toFixed(1)} kWh this month`);
+      stats = bits.join(" · ");
+    }
+    r.getElementById("summary").innerHTML = summary;
+    r.getElementById("stats").innerHTML = stats;
+  }
+
+  // Recorded history (it survives restarts; last_changed doesn't): the cycles of the last 7 days, the last one's cycle,
+  // whether it finished, whether the door has opened since, and the energy and water it used. Looked up again whenever
+  // the machine state, progress or door changes.
+  async _history(key) {
     if (this._cycKey === key || !this._hass.callWS) return;
     this._cycKey = key;
-    const ids = { state: `sensor.${p}_machine_state`, prog: `sensor.${p}_progress`, cycle: `select.${p}_cycle`, door: doorId };
+    const id = role => Samsung.id(this, role), doorId = Samsung.door(this);
+    const ids = [id("state"), id("progress"), id("cycle"), doorId, id("energy"), id("water")].filter(Boolean);
     try {
-      const res = await this._hass.callWS({ type: "history/history_during_period", entity_ids: Object.values(ids), minimal_response: true,
+      const res = await this._hass.callWS({ type: "history/history_during_period", entity_ids: ids, minimal_response: true,
         no_attributes: true, significant_changes_only: false, start_time: new Date(Date.now() - 7 * 864e5).toISOString() });
       // restarts show up as unavailable/unknown; skipping them joins the stretches on either side
-      const rows = id => (res?.[id] || []).map(x => ({ s: x.s ?? x.state, t: (x.lc ?? x.lu) * 1000 || Date.parse(x.last_changed) }))
+      const rows = eid => (eid && res?.[eid] || []).map(x => ({ s: x.s ?? x.state, t: (x.lc ?? x.lu) * 1000 || Date.parse(x.last_changed) }))
         .filter(x => x.s != null && !["unavailable", "unknown"].includes(x.s));
-      let start = NaN, end = NaN;
-      for (const x of rows(ids.state)) {
+      const at = (list, t) => { let v = null; for (const x of list) if (x.t <= t) v = x.s; else break; return v; };
+      const runs = [];
+      let cur = null;
+      for (const x of rows(id("state"))) {
         const running = RUNNING_STATES.includes(x.s);
-        if (running && (isNaN(start) || !isNaN(end))) { start = x.t; end = NaN; }
-        else if (!running && !isNaN(start) && isNaN(end)) end = x.t;
+        if (running && !cur) cur = { start: x.t };
+        else if (!running && cur) { cur.end = x.t; runs.push(cur); cur = null; }
       }
+      // a gap under 2 minutes is the same cycle; a stretch under 3 minutes isn't a load
+      const joined = [];
+      for (const x of runs) { const p = joined[joined.length - 1]; if (p && x.start - p.end < 120000) p.end = x.end; else joined.push({ ...x }); }
+      const loads = joined.filter(x => x.end - x.start >= 180000);
+      const cycles = rows(id("cycle"));
+      // the cycle chosen when it started (the select can't change mid-cycle, and drops back to Normal as it ends)
+      for (const l of loads) l.cycle = at(cycles, l.start + 30000);
       let last = null;
-      if (!isNaN(end)) {
-        let cycle = null;
-        // the cycle chosen when it started (the select can't change mid-cycle, and drops back to Normal as it ends)
-        for (const x of rows(ids.cycle)) if (x.t <= start + 30000) cycle = x.s;
-        last = { start, end, cycle,
-          finished: rows(ids.prog).some(x => x.s === "finish" && x.t >= start && x.t <= end + 15 * 60000),
-          opened: rows(ids.door).some(x => x.s === "on" && x.t > end) };
+      const l = loads[loads.length - 1];
+      if (l) {
+        // energy counters update every few minutes, so read the end value a little after the cycle (before any next one)
+        const nextStart = cur ? cur.start : Date.now();
+        const used = list => { const a = num(at(list, l.start), 3), b = num(at(list, Math.min(l.end + 20 * 60000, nextStart)), 3);
+          return a != null && b != null && b >= a ? b - a : null; };
+        last = { ...l, finished: rows(id("progress")).some(x => x.s === "finish" && x.t >= l.start && x.t <= l.end + 15 * 60000),
+          opened: rows(doorId).some(x => x.s === "on" && x.t > l.end),
+          energy: used(rows(id("energy"))), water: used(rows(id("water"))),
+          waterUnit: this._hass.states[id("water")]?.attributes?.unit_of_measurement };
       }
-      if (this._cycKey === key) { this._last = last; this._historyRead = true; this._render(); }
+      const week = loads.filter(x => x.end > Date.now() - 7 * 864e5);
+      const count = {};
+      for (const x of week) { const n = Samsung.cycle(this, x.cycle); if (x.cycle) count[n] = (count[n] || 0) + 1; }
+      // "mostly" only when one cycle clearly leads
+      const [top, next] = Object.entries(count).sort((a, b) => b[1] - a[1]);
+      const stats = { week: week.length, top: top && top[1] >= 2 && (!next || top[1] > next[1]) ? top[0] : null, month: await this._monthEnergy() };
+      if (this._cycKey === key) { this._last = last; this._stats = stats; this._historyRead = true; this._render(); }
     } catch (e) {}
+  }
+  // this month's energy from the long-term statistics (kept for good, unlike history); read at most every 15 minutes
+  async _monthEnergy() {
+    const eid = Samsung.id(this, "energy");
+    if (!eid) return null;
+    if (this._month && Date.now() - this._month.at < 15 * 60000) return this._month.v;
+    try {
+      const res = await this._hass.callWS({ type: "recorder/statistic_during_period", statistic_id: eid, calendar: { period: "month" }, types: ["change"] });
+      this._month = { at: Date.now(), v: typeof res?.change === "number" ? res.change : null };
+    } catch (e) { this._month = { at: Date.now(), v: null }; }
+    return this._month.v;
   }
 
   _time() {
@@ -486,11 +738,13 @@ if (!window.customCards.some(c => c.type === "samsung-laundry-card"))
     description: "Samsung washer/dryer (LocalThings) with a progress ring round the door",
     documentationURL: "https://github.com/2tk785fryr-tech/washer-and-dryer" });
 
-// Cycle picker: cycles as buttons, confirm before starting.
-// Starting = choose the cycle on select.<p>_cycle, then press button.<p>_start. The machine only accepts it with Smart Control on.
+// Cycle picker: cycles as buttons. Picking one selects it on the machine (so its settings narrow to what that cycle
+// allows), shows those settings to adjust, and a choice of starting now or finishing by a time. The machine only takes
+// remote commands with Smart Control on.
 const PCSS = `
 ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px solid #ffffff0f; border-radius:16px; box-shadow:none; padding:12px 14px 14px;
   color:#ececec; font-family:var(--samsung-font,system-ui,-apple-system,"Segoe UI",sans-serif); }
+.embedded { background:none; border:none; padding:0; }
 .head { display:flex; align-items:center; gap:8px; margin-bottom:10px; font-weight:600; font-size:16px; }
 .head button { margin-left:auto; }
 .head button[hidden] { display:none; }
@@ -506,36 +760,59 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .all[hidden] { display:none; }
 .all input { font:15px inherit; font-family:inherit; color:#ececec; background:#1f1f1f; border:1px solid #ffffff1a; border-radius:10px; padding:9px 12px; }
 .all .grid { max-height:300px; overflow-y:auto; }
-.confirm { position:sticky; bottom:0; margin-top:10px; display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px;
-  background:#1f1f1f; border:1px solid var(--c); }
-.confirm[hidden] { display:none; }
-.confirm span { flex:1; font-size:14px; }
-.confirm .go { background:var(--c); color:#000; font-weight:700; }
+.setup { margin-top:10px; display:grid; gap:10px; padding:12px; border-radius:14px; background:#1f1f1f; border:1px solid var(--c); }
+.setup[hidden] { display:none; }
+.setup h3 { margin:0; font-size:15px; display:flex; align-items:baseline; gap:8px; }
+.setup h3 small { font-weight:400; color:#9a9a9a; font-size:12.5px; }
+.settings { display:grid; grid-template-columns:repeat(auto-fill,minmax(105px,1fr)); gap:8px 10px; }
+.settings:empty { display:none; }
+.settings label, .when > label { display:grid; gap:4px; font-size:12px; color:#9a9a9a; }
+select, input[type=time] { font:14px inherit; font-family:inherit; color:#ececec; background:#2a2a2a; border:1px solid #ffffff1f; border-radius:9px;
+  padding:7px 9px; color-scheme:dark; min-width:0; }
+.when { display:grid; gap:6px; }
+.when[hidden] { display:none; }
+.seg { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.seg button { font:500 13px inherit; font-family:inherit; color:#ccc; background:#2e2e2e; border:1px solid #ffffff14; border-radius:999px; padding:6px 12px; cursor:pointer; }
+.seg button.on { color:#000; background:var(--c); border-color:var(--c); font-weight:600; }
+.seg [hidden] { display:none; }
+.actions { display:flex; align-items:center; gap:10px; }
+.actions span { flex:1; font-size:13.5px; }
+.actions .go { background:var(--c); color:#000; font-weight:700; }
+.actions .go:disabled { opacity:.5; cursor:default; }
 `;
 class SamsungCyclesCard extends HTMLElement {
   setConfig(c) {
-    this._config = setup(c); this._found = null; this._sig = null;
-    if (this.isConnected && !this.shadowRoot) this._build();
-    else if (this.shadowRoot) this._render();
+    this._config = setup(c); this._entsSig = null; this._sig = null;
+    if (this.shadowRoot) { this.shadowRoot.innerHTML = ""; this._built = false; }
+    if (this.isConnected) this._build();
   }
   getCardSize() { return 6; }
   getGridOptions() { return { columns: 6, min_columns: 3 }; }
   static getConfigElement() { return document.createElement("samsung-cycles-card-editor"); }
   static getStubConfig() { return { appliance: "washer" }; }
-  connectedCallback() { if (!this.shadowRoot && this._config) this._build(); }
+  connectedCallback() { if (!this._built && this._config) this._build(); }
   set hass(h) { this._hass = h; this._render(); }
 
   _build() {
-    const c = this._config, r = this.attachShadow({ mode: "open" });
-    r.innerHTML = `<style>${PCSS}</style><ha-card style="--c:${esc(c.colour)}">
+    const c = this._config, r = this.shadowRoot || this.attachShadow({ mode: "open" });
+    r.innerHTML = `<style>${PCSS}</style><ha-card class="${c.embedded ? "embedded" : ""}" style="--c:${esc(c.colour)}">
       <div class="head"><span>${esc(c.title)} cycles</span><button class="small" id="more" hidden>All cycles</button></div>
       <div class="note" id="note" hidden></div>
       <div class="grid" id="favs"></div>
       <div class="all" id="all" hidden><input id="q" type="search" placeholder="Search cycles">
         <div class="grid" id="list"></div></div>
-      <div class="confirm" id="confirm" hidden><span id="ask"></span>
-        <button class="small" id="no">Cancel</button><button class="small go" id="yes">Start</button></div>
+      <div class="setup" id="setup" hidden>
+        <h3><span id="setName"></span><small id="setNote"></small></h3>
+        <div class="settings" id="settings"></div>
+        <div class="when" id="when"><label>When</label>
+          <div class="seg"><button data-w="now" class="on">Start now</button><button data-w="by" id="byBtn">Finish by</button>
+            <button data-w="delay" id="delayBtn">Start later</button>
+            <input type="time" id="byTime" hidden><select id="delayH" hidden></select></div></div>
+        <div class="actions"><span id="ask"></span><button class="small" id="no">Cancel</button><button class="small go" id="yes">Start</button></div>
+      </div>
     </ha-card>`;
+    this._built = true; this._mode = "now";
+    r.getElementById("delayH").innerHTML = Array.from({ length: 24 }, (_, i) => `<option value="${i + 1}">in ${i + 1} h</option>`).join("");
     r.getElementById("more").addEventListener("click", () => {
       const a = r.getElementById("all"); a.hidden = !a.hidden;
       r.getElementById("more").textContent = a.hidden ? "All cycles" : "Favourites only";
@@ -543,6 +820,12 @@ class SamsungCyclesCard extends HTMLElement {
     r.getElementById("q").addEventListener("input", e => {
       const q = e.target.value.toLowerCase();
       r.querySelectorAll("#list .prog").forEach(b => { b.hidden = !b.textContent.toLowerCase().includes(q); });
+    });
+    r.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => this._when(b.dataset.w)));
+    r.getElementById("byTime").addEventListener("input", () => this._ask());
+    r.getElementById("delayH").addEventListener("change", () => this._ask());
+    r.getElementById("settings").addEventListener("change", e => {
+      const role = e.target.dataset.role; if (role) this._send(() => Samsung.choose(this, role, e.target.value));
     });
     r.getElementById("no").addEventListener("click", () => this._pick(null));
     r.getElementById("yes").addEventListener("click", () => this._start());
@@ -560,42 +843,98 @@ class SamsungCyclesCard extends HTMLElement {
     r.getElementById("more").hidden = !rest.length;
     r.querySelectorAll(".prog").forEach(b => b.addEventListener("click", () => this._pick(b.dataset.k)));
   }
-  _pick(k) {
+  async _send(fn) {
+    const n = this.shadowRoot.getElementById("note");
+    try { await fn(); } catch (e) { n.hidden = false; n.textContent = `Couldn't send that: ${e.message || e}`; this._err = true; }
+  }
+  // Picking a cycle selects it on the machine straight away: the settings it allows only show once the machine has it.
+  async _pick(k) {
     const r = this.shadowRoot;
     if (k && (this._running || this._doorOpen || !this._remote)) {
       r.getElementById("note").animate([{ transform: "scale(1)" }, { transform: "scale(1.03)" }, { transform: "scale(1)" }], 300);
       return;
     }
-    this._sel = k;
+    this._sel = k; this._ready = false; this._setSig = null;
     r.querySelectorAll(".prog").forEach(b => b.classList.toggle("sel", b.dataset.k === k));
-    r.getElementById("confirm").hidden = !k;
-    if (k) r.getElementById("ask").textContent = `Start ${Samsung.cycle(this, k)} on the ${this._config.title.toLowerCase()}?`;
+    r.getElementById("setup").hidden = !k;
+    if (!k) return;
+    r.getElementById("setName").textContent = Samsung.cycle(this, k);
+    r.getElementById("setNote").textContent = "getting its settings…";
+    r.getElementById("settings").innerHTML = "";
+    this._when("now");
+    const sel = Samsung.id(this, "cycle");
+    await this._send(async () => {
+      if (this._hass.states[sel]?.state !== k) await Samsung.choose(this, "cycle", k);
+      for (let i = 0; i < 20 && this._hass.states[sel]?.state !== k && this._sel === k; i++) await sleep(250);
+    });
+    if (this._sel !== k) return;
+    this._ready = true;
+    r.getElementById("setNote").textContent = this._hass.states[sel]?.state === k ? "" : "the machine hasn't confirmed it yet";
+    this._settings();
+  }
+  // a dropdown for each setting this cycle allows more than one value for
+  _settings() {
+    const r = this.shadowRoot; if (!this._sel || !this._ready) return;
+    const list = SETTINGS[this._config.appliance].map(([role, label]) => [role, label, Samsung.s(this, role)])
+      .filter(([, , s]) => s && (s.attributes.options || []).length > 1);
+    const sig = JSON.stringify(list.map(([role, , s]) => [role, s.state, s.attributes.options]));
+    if (sig === this._setSig || r.activeElement?.closest?.("#settings")) return;
+    this._setSig = sig;
+    r.getElementById("settings").innerHTML = list.map(([role, label, s]) => `<label>${esc(label)}<select data-role="${role}">${
+      s.attributes.options.map(o => `<option value="${esc(o)}"${o === s.state ? " selected" : ""}>${esc(Samsung.show(this, s, o))}</option>`).join("")}</select></label>`).join("");
+  }
+  // start now, finish by a time (the machine works out the delay), or start in a number of hours
+  _when(w) {
+    const r = this.shadowRoot;
+    this._mode = w;
+    r.querySelectorAll(".seg button").forEach(b => b.classList.toggle("on", b.dataset.w === w));
+    const by = r.getElementById("byTime");
+    by.hidden = w !== "by"; r.getElementById("delayH").hidden = w !== "delay";
+    if (w === "by" && !by.value) {
+      // default: an hour after the cycle would end if started now, rounded up to the next half hour
+      const mins = num(Samsung.s(this, "remaining")?.state, 0) || 60, t = new Date(Date.now() + (mins + 60) * 60000);
+      t.setMinutes(Math.ceil(t.getMinutes() / 30) * 30, 0, 0);
+      by.value = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    }
+    this._ask();
+  }
+  _ask() {
+    const r = this.shadowRoot, name = Samsung.cycle(this, this._sel), m = this._mode;
+    const by = r.getElementById("byTime").value, hrs = r.getElementById("delayH").value;
+    const at = by ? hhmm(new Date(`2000-01-01T${by}`)) : "";
+    r.getElementById("ask").textContent = m === "by" ? `${name} will finish by ${at}.` : m === "delay" ? `${name} starts in ${hrs} h.` : `Start ${name} now?`;
+    r.getElementById("yes").textContent = m === "now" ? "Start" : "Set";
+    r.getElementById("yes").disabled = m === "by" && !by;
   }
   async _start() {
-    const k = this._sel, p = Samsung.prefix(this), n = this.shadowRoot.getElementById("note");
+    const k = this._sel, m = this._mode, r = this.shadowRoot;
+    const by = r.getElementById("byTime").value, hrs = +r.getElementById("delayH").value;
     this._pick(null);
     if (!k) return;
-    if (!p) { n.hidden = false; n.textContent = "Couldn't find this machine in Home Assistant. Check the entity option."; this._err = true; return; }
-    const sel = `select.${p}_cycle`;
-    try {
-      await this._hass.callService("select", "select_option", { option: k }, { entity_id: sel });
-      // wait for the machine to confirm the cycle before pressing Start, so it doesn't start the old one
-      for (let i = 0; i < 20 && this._hass.states[sel]?.state !== k; i++) await sleep(250);
-      await Samsung.press(this, "start");
-    } catch (e) { n.hidden = false; n.textContent = `Couldn't start: ${e.message || e}`; this._err = true; }
+    await this._send(async () => {
+      const delayId = Samsung.id(this, "delay");
+      if (m === "by") await this._hass.callService("time", "set_value", { time: `${by}:00` }, { entity_id: Samsung.id(this, "finish_by") });
+      else if (m === "delay") await this._hass.callService("number", "set_value", { value: hrs }, { entity_id: delayId });
+      // starting now clears a delay left over from before, so the cycle doesn't wait
+      else if (delayId && num(this._hass.states[delayId]?.state) > 0) await this._hass.callService("number", "set_value", { value: 0 }, { entity_id: delayId });
+      await Samsung.startCycle(this, k);
+    });
   }
   _render() {
-    const r = this.shadowRoot, h = this._hass; if (!r || !h || !r.getElementById("note")) return;
-    const p = Samsung.prefix(this), n = r.getElementById("note"), name = this._config.title.toLowerCase();
-    if (!p) { n.hidden = false; n.textContent = `Couldn't find a Samsung ${this._config.appliance} from LocalThings. Add the entity option.`; return; }
-    const options = h.states[`select.${p}_cycle`]?.attributes?.options || [];
+    const r = this.shadowRoot, h = this._hass; if (!r || !h || !this._built) return;
+    const n = r.getElementById("note"), name = this._config.title.toLowerCase();
+    if (!Samsung.ents(this)) { n.hidden = false; n.textContent = `Couldn't find a Samsung ${this._config.appliance} from LocalThings. Pick it in the card editor (Machine).`; return; }
+    const options = Samsung.s(this, "cycle")?.attributes?.options || [];
     const sig = options.join("|") + "|" + (h.locale?.language || "");
     if (sig !== this._sig) { this._sig = sig; this._buttons(options); }
-    const running = RUNNING_STATES.includes(h.states[`sensor.${p}_machine_state`]?.state);
-    this._remote = h.states[`binary_sensor.${p}_smart_control`]?.state === "on";
+    const running = RUNNING_STATES.includes(Samsung.s(this, "state")?.state);
+    this._remote = Samsung.s(this, "smart")?.state === "on";
     const doorId = Samsung.door(this);
     this._doorOpen = !running && !!doorId && h.states[doorId]?.state === "on";
     this._running = running;
+    r.getElementById("byBtn").hidden = !Samsung.id(this, "finish_by");
+    r.getElementById("delayBtn").hidden = !!Samsung.id(this, "finish_by") || !Samsung.id(this, "delay");
+    r.getElementById("when").hidden = !Samsung.id(this, "finish_by") && !Samsung.id(this, "delay");
     if (!this._err || running) {
       this._err = false;
       n.hidden = !running && !this._doorOpen && this._remote;
@@ -603,46 +942,157 @@ class SamsungCyclesCard extends HTMLElement {
         : this._doorOpen ? `The ${name} door is open. Close it to start a cycle.`
         : `Smart Control is off. Turn the ${name} on, load it, and press Smart Control on the machine to start cycles from here.`;
     }
-    if (running || this._doorOpen) this._pick(null);
+    if (this._sel && (running || this._doorOpen || !this._remote)) this._pick(null);
+    else this._settings();
   }
 }
 if (!customElements.get("samsung-cycles-card")) customElements.define("samsung-cycles-card", SamsungCyclesCard);
 if (!window.customCards.some(c => c.type === "samsung-cycles-card"))
   window.customCards.push({ type: "samsung-cycles-card", name: "Samsung cycles", preview: true,
-    description: "Start Samsung washer/dryer cycles (LocalThings)",
+    description: "Start Samsung washer/dryer cycles (LocalThings): settings, start now or finish by a time",
     documentationURL: "https://github.com/2tk785fryr-tech/washer-and-dryer" });
 
-// Visual editors for the card picker, built on Home Assistant's own ha-form. Other options (entity, door, cycle_names,
-// favourites, ...) stay in YAML and are kept as they are.
+// Washer and dryer side by side in one card, with a status line for both. Any machine-card option applies to both;
+// washer: {...} / dryer: {...} apply to one. cycles: true adds each machine's cycles card underneath it.
+const PAIR_KEYS = ["type", "title", "washer", "dryer", "washer_device", "dryer_device", "washer_door", "dryer_door", "cycles", "view_layout", "grid_options"];
+class SamsungLaundryPairCard extends HTMLElement {
+  setConfig(c) {
+    this._config = c;
+    const shared = Object.fromEntries(Object.entries(c).filter(([k]) => !PAIR_KEYS.includes(k)));
+    const one = kind => {
+      const cfg = { ...shared, appliance: kind, embedded: true, ...(c[kind] || {}) };
+      if (c[`${kind}_device`] && !cfg.device) cfg.device = c[`${kind}_device`];
+      if (c[`${kind}_door`] !== undefined && cfg.door === undefined) cfg.door = c[`${kind}_door`];
+      return cfg;
+    };
+    this._cfg = { washer: one("washer"), dryer: one("dryer") };
+    this._build();
+  }
+  getCardSize() { return this._config?.cycles ? 18 : 12; }
+  getGridOptions() { return { columns: 12, min_columns: 6 }; }
+  static getConfigElement() { return document.createElement("samsung-laundry-pair-card-editor"); }
+  static getStubConfig() { return {}; }
+  set hass(h) {
+    this._hass = h;
+    for (const el of this._kids || []) el.hass = h;
+    this._status();
+  }
+  _build() {
+    const r = this.shadowRoot || this.attachShadow({ mode: "open" }), c = this._config;
+    r.innerHTML = `<style>
+      ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px solid #ffffff0f; border-radius:16px; box-shadow:none; padding:12px 14px 14px;
+        color:#ececec; font-family:var(--samsung-font,system-ui,-apple-system,"Segoe UI",sans-serif); }
+      .top { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin-bottom:10px; }
+      .top b { font-size:17px; font-weight:600; } .top span { font-size:13px; color:#9a9a9a; }
+      .two { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px; }
+      .col { display:grid; gap:12px; align-content:start; }
+      .credit { margin-top:10px; text-align:center; font-size:11.5px; color:#9a9a9a; }
+      .credit a { color:#4fb3ff; text-decoration:none; font-weight:600; }
+    </style><ha-card><div class="top"><b>${esc(c.title || "Laundry")}</b><span id="status"></span></div><div class="two"></div>
+      <div class="credit">Based on the hOn card by <a href="https://mymediabuild.uk/home-assistant-washer-dryer-card/" target="_blank" rel="noopener">My Media Build</a></div></ha-card>`;
+    const two = r.querySelector(".two");
+    this._kids = []; this._machines = {};
+    for (const kind of ["washer", "dryer"]) {
+      const col = document.createElement("div"); col.className = "col";
+      const m = document.createElement("samsung-laundry-card"); m.setConfig(this._cfg[kind]); m._onStatus = () => this._status(); col.appendChild(m);
+      this._kids.push(m); this._machines[kind] = m;
+      if (c.cycles) { const cy = document.createElement("samsung-cycles-card"); cy.setConfig(this._cfg[kind]); col.appendChild(cy); this._kids.push(cy); }
+      two.appendChild(col);
+    }
+    if (this._hass) this.hass = this._hass;
+  }
+  _status() {
+    const el = this.shadowRoot?.getElementById("status"); if (!el || !this._machines) return;
+    el.textContent = ["washer", "dryer"].map(k => `${this._cfg[k].name || DEFAULTS[k].title}: ${this._machines[k].status || "…"}`).join(" · ");
+  }
+}
+if (!customElements.get("samsung-laundry-pair-card")) customElements.define("samsung-laundry-pair-card", SamsungLaundryPairCard);
+if (!window.customCards.some(c => c.type === "samsung-laundry-pair-card"))
+  window.customCards.push({ type: "samsung-laundry-pair-card", name: "Samsung laundry pair", preview: true,
+    description: "Samsung washer and dryer (LocalThings) side by side in one card",
+    documentationURL: "https://github.com/2tk785fryr-tech/washer-and-dryer" });
+
+// Visual editors, built on Home Assistant's own ha-form: pick the machine (a LocalThings device), the optional add-on door
+// sensor and laundry-waiting helper, and what the card shows. YAML-only options (entities, cycle_names, ...) are kept as they are.
 const APPLIANCE_FIELD = { name: "appliance", required: true, selector: { select: { mode: "dropdown",
   options: [{ value: "washer", label: "Washer" }, { value: "dryer", label: "Dryer" }] } } };
-const EDITOR_SCHEMA = {
-  machine: [APPLIANCE_FIELD, { name: "name", selector: { text: {} } },
-    { name: "style", selector: { select: { mode: "dropdown", options: [{ value: "photo", label: "Detailed" }, { value: "drawn", label: "Simple drawing" }] } } },
-    { name: "max_width", selector: { text: {} } }],
-  cycles: [APPLIANCE_FIELD, { name: "name", selector: { text: {} } }],
-};
-const EDITOR_LABELS = { appliance: "Machine", name: "Title (optional)", style: "Picture", max_width: "Maximum width, e.g. 380px (optional)" };
+const DEVICE = { device: { filter: { integration: "localthings" } } };
+const DOOR = { entity: { filter: { domain: "binary_sensor" } } };
+const HELPER = { entity: { filter: { domain: "input_boolean" } } };
+const COLOUR = { select: { mode: "dropdown", custom_value: true,
+  options: [{ value: "white", label: "White" }, { value: "midnight_blue", label: "Midnight blue" }] } };
+const LOOK = [
+  { name: "body_colour", selector: COLOUR },
+  { name: "style", selector: { select: { mode: "dropdown", options: [{ value: "photo", label: "Detailed" }, { value: "drawn", label: "Simple drawing" }] } } },
+  { name: "max_width", selector: { text: {} } },
+];
+const SHOW = [{ name: "door_hint", selector: { boolean: {} } }, { name: "toggles", selector: { boolean: {} } },
+  { name: "summary", selector: { boolean: {} } }, { name: "stats", selector: { boolean: {} } }];
+const EDITOR_LABELS = { appliance: "Washer or dryer", device: "Machine (LocalThings device; found automatically if left empty)", name: "Title (optional)",
+  door: "Door sensor (optional add-on)", unload_helper: "Laundry-waiting helper (optional)", body_colour: "Machine colour (or a hex colour)",
+  style: "Picture", max_width: "Maximum width, e.g. 380px (optional)", door_hint: "\"Open door to dry\" hint", toggles: "Quick toggles",
+  summary: "Last cycle", stats: "Weekly stats", favourites: "Cycles to show as buttons (all if none picked)",
+  title: "Title", washer_device: "Washer (LocalThings device)", dryer_device: "Dryer (LocalThings device)",
+  washer_door: "Washer door sensor (optional)", dryer_door: "Dryer door sensor (optional)", cycles: "Show each machine's cycles card" };
+const EDITOR_HELP = { door: "A contact sensor you've added to the door. Without one the card works the same, minus the door features.",
+  unload_helper: "An input_boolean that's on while laundry is waiting. Only used when Home Assistant has no recent history." };
 class SamsungCardEditor extends HTMLElement {
-  setConfig(c) { this._config = { appliance: "washer", ...c }; this._draw(); }
-  set hass(h) { this._hass = h; if (this._form) this._form.hass = h; }
+  setConfig(c) { this._config = { ...c }; this._draw(); }
+  set hass(h) { this._hass = h; this._draw(); }
+  // what the card does when an option is left out, so the form shows it and the config stays short
+  _defaults(c) {
+    const kind = this.constructor.kind;
+    if (kind === "pair") return { cycles: false, body_colour: "white", style: "photo", toggles: true, summary: true, stats: true };
+    if (kind === "cycles") return { appliance: "washer" };
+    return { appliance: "washer", body_colour: "white", style: "photo", door_hint: (c.appliance || "washer") === "washer", toggles: true, summary: true, stats: true };
+  }
+  _schema(c) {
+    const kind = this.constructor.kind;
+    if (kind === "pair") return [{ name: "title", selector: { text: {} } },
+      { name: "washer_device", selector: DEVICE }, { name: "dryer_device", selector: DEVICE },
+      { name: "washer_door", selector: DOOR }, { name: "dryer_door", selector: DOOR },
+      { name: "cycles", selector: { boolean: {} } },
+      { type: "expandable", name: "look", flatten: true, title: "Look", schema: LOOK },
+      { type: "expandable", name: "show", flatten: true, title: "Show on the cards", schema: SHOW.filter(f => f.name !== "door_hint") }];
+    const base = [APPLIANCE_FIELD, { name: "device", selector: DEVICE }, { name: "name", selector: { text: {} } }, { name: "door", selector: DOOR }];
+    if (kind === "cycles") {
+      // the favourites picker lists the chosen machine's own cycles, by name
+      const probe = { _config: setup(c), _hass: this._hass };
+      const cyc = Samsung.s(probe, "cycle"), opts = cyc?.attributes?.options || [];
+      return [...base, ...(opts.length ? [{ name: "favourites", selector: { select: { multiple: true, mode: "list",
+        options: opts.map(o => ({ value: o, label: Samsung.cycle(probe, o) })) } } }] : [])];
+    }
+    return [...base, { name: "unload_helper", selector: HELPER },
+      { type: "expandable", name: "look", flatten: true, title: "Look", schema: LOOK },
+      { type: "expandable", name: "show", flatten: true, title: "Show on the card", schema: SHOW }];
+  }
   _draw() {
+    if (!this._config || !this._hass) return;
     if (!this._form) {
       this._form = document.createElement("ha-form");
-      this._form.computeLabel = f => EDITOR_LABELS[f.name] || f.name;
+      this._form.computeLabel = f => EDITOR_LABELS[f.name] || f.title || f.name;
+      this._form.computeHelper = f => EDITOR_HELP[f.name] || "";
       this._form.addEventListener("value-changed", e => {
-        const config = { ...e.detail.value };
-        for (const k of Object.keys(config)) if (config[k] === "" || config[k] == null) delete config[k];
+        const config = { ...e.detail.value }, def = this._defaults(config);
+        for (const k of Object.keys(config)) {
+          const v = config[k];
+          if (v === "" || v == null || (Array.isArray(v) && !v.length) || (k in def && def[k] === v && k !== "appliance")) delete config[k];
+        }
+        this._config = config;
         this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
       });
       this.appendChild(this._form);
     }
-    this._form.hass = this._hass; this._form.schema = EDITOR_SCHEMA[this.constructor.kind]; this._form.data = this._config;
+    this._form.hass = this._hass;
+    this._form.schema = this._schema(this._config);
+    this._form.data = { ...this._defaults(this._config), ...this._config };
   }
 }
 class SamsungLaundryCardEditor extends SamsungCardEditor { static kind = "machine"; }
 class SamsungCyclesCardEditor extends SamsungCardEditor { static kind = "cycles"; }
+class SamsungLaundryPairCardEditor extends SamsungCardEditor { static kind = "pair"; }
 if (!customElements.get("samsung-laundry-card-editor")) customElements.define("samsung-laundry-card-editor", SamsungLaundryCardEditor);
 if (!customElements.get("samsung-cycles-card-editor")) customElements.define("samsung-cycles-card-editor", SamsungCyclesCardEditor);
+if (!customElements.get("samsung-laundry-pair-card-editor")) customElements.define("samsung-laundry-pair-card-editor", SamsungLaundryPairCardEditor);
 console.info(`%c SAMSUNG-LAUNDRY-CARD %c v${SAMSUNG_CARD_VERSION} %c based on the hOn card by My Media Build: https://mymediabuild.uk `,
   "background:#4fb3ff;color:#000;font-weight:700", "background:#222;color:#fff", "color:#9a9a9a");

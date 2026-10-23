@@ -1,31 +1,55 @@
 # Samsung Washer & Dryer Card for Home Assistant
 
-Dashboard cards for Samsung washers and dryers connected through **[LocalThings](https://github.com/mbillow/localthings)**. Each card draws a front-loading machine. It shows the time left on the machine's display, a progress ring round the door and laundry turning in the drum, and has buttons to pause, resume, stop or start a cycle.
+Dashboard cards for Samsung washers and dryers connected through **[LocalThings](https://github.com/mbillow/localthings)**. Each card draws a front-loading machine. It shows the time left on the machine's display, a progress ring round the door and laundry turning in the drum. Its buttons pause, resume or stop a cycle, or start one with your choice of settings, now or set to finish by a time you pick.
 
 > **Credit:** this card is based on the [hOn Washer & Dryer Card](https://mymediabuild.uk/home-assistant-washer-dryer-card/) by **[My Media Build](https://mymediabuild.uk)**. The design, illustrations and animations are theirs; that card was made for Haier, Candy and Hoover machines, and this version reads Samsung's LocalThings entities instead. If you like it, [buy them a coffee](https://buymeacoffee.com/bobgreggr) ☕.
 
 ![Preview](images/preview.png)
 
+## The cards
+
+| Card | What it is |
+|---|---|
+| **Samsung laundry** (`custom:samsung-laundry-card`) | One machine: the picture, its status, Pause/Resume/Stop, quick toggles, the last cycle and weekly stats |
+| **Samsung cycles** (`custom:samsung-cycles-card`) | The machine's cycles as buttons. Pick one, adjust its settings, then start now or set a finish time |
+| **Samsung laundry pair** (`custom:samsung-laundry-pair-card`) | Optional: washer and dryer side by side in one card, with a status line for both |
+
 ## What it shows
 
 - **Time left** on the machine's display, counting down every second, with the percentage done underneath. Before a cycle starts it shows the selected cycle's length and "Ready".
-- **A progress ring round the door**, filled from the machine's own progress percentage: blue for the washer, orange for the dryer, light blue while the dryer cools down or runs wrinkle prevent, and green when the cycle is finished.
-- **The current phase** on the door glass: Weight sensing, Washing, Rinsing, Spinning, Drying, Cooling.
-- **Cycle effects in the drum:** only white laundry on a Whites cycle, and on a steam cycle (Steam Sanitize+, Steam Refresh, Wrinkle Away, or any time the machine reports a steaming phase) the glass fogs up, steam rolls inside it and wisps rise from the top of the door. Steam only shows while a cycle is running. Washer Self-Clean shows water and no laundry.
-- **Your machine's colour:** `body_colour: midnight_blue` (or any hex colour) recolours the built-in pictures.
-- **Cycle, temperature and spin speed** (washer) or **dry level** (dryer), plus the finish time. When the washer is idle it shows how many cycles are left before a drum clean; the dryer shows whether wrinkle prevent is on.
-- **Door open or closed**, from a door sensor if you have one (it finds `binary_sensor.<machine>_door_door` on its own). The door icon shows open, closed, or locked while a cycle runs, and "Door open" appears on the glass. After any cycle ends with the door shut, the glass says **Wet clothes in the washer** or **Dry clothes in the dryer**, the label at the top says **Ready to unload**, and the laundry sits still at the bottom of the drum until the door is opened. Washer Self-Clean leaves the drum empty instead. This comes from Home Assistant's recorded history, so it survives restarts; `input_boolean.washer_unacknowledged` / `input_boolean.dryer_unacknowledged` (if you have them) back it up when there's no history. The cycles card won't start a cycle while the door is open. On the washer, if the door is shut while it's idle (and the laundry is out), "Open door to dry" appears on the glass as a reminder to let the drum dry.
+- **A progress ring round the door**: blue for the washer, orange for the dryer, light blue while the dryer cools down or runs wrinkle prevent, and green when the cycle is finished.
+- **The current phase** on the door glass: Weight sensing, Washing, Rinsing, Spinning, Drying, Cooling. The drum's speed follows it: slow while weight sensing, steady while washing, a fast blur during spin (with the water draining), and gentler while cooling.
+- **Cycle effects:** only white laundry on a Whites cycle. On a steam cycle (Steam Sanitize+, Steam Refresh, Wrinkle Away, or a steaming phase) the glass fogs up and wisps rise from the top of the door. Steam only shows while a cycle is running. Washer Self-Clean shows water and no laundry.
+- **Your machine's colour:** white by default, `midnight_blue`, or any hex colour.
+- **Cycle, temperature and spin** (washer) or **dry level** (dryer), and the finish time.
+- **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume need Smart Control on; Stop works without it.
+- **Quick toggles** under the machine: Wrinkle prevent and Damp alert (dryer), and the end-of-cycle Sound (both).
+- **Last cycle:** for example "Steam Sanitize+ · 1 h 30 min · 2.8 kWh · ended 2:23 PM". Water is shown too on machines that report it.
+- **Weekly stats:** for example "3 loads this week · mostly Heavy Duty · 12.3 kWh this month".
+- **Drum-clean reminder:** when the washer says a drum clean is due, a banner with a **Start Self-Clean** button.
 - **A Smart Control icon**, and an error message if the machine reports an alarm code.
-- **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume only appear when Smart Control is on; Stop works without it.
-- **A cycles card**: the machine's cycles as buttons. Tap one, confirm, and it starts.
-- **A small credit line** under the machine, linking to My Media Build, who made the original card.
+
+### With an optional door sensor
+
+Samsung machines don't report their door. If you add a contact sensor to the door, the card also shows:
+
+- **The door opening:** the door in the picture swings open on its hinge, and the door icon shows open, closed, or locked while a cycle runs.
+- **Clothes left inside:** after any cycle ends with the door shut, the glass says **Wet clothes in the washer** or **Dry clothes in the dryer**, the label at the top says **Ready to unload**, and the laundry sits still at the bottom of the drum until the door is opened. Washer Self-Clean leaves the drum empty instead. This comes from Home Assistant's recorded history, so it survives restarts. An optional input_boolean that's on while laundry is waiting backs it up when there's no history.
+- **"Open door to dry"** on the washer when its door is shut while it's idle and empty, so the drum can dry.
+- **No starting with the door open:** the cycles card won't start a cycle until the door is closed.
+
+Without a door sensor, everything else works the same.
+
+### Starting a cycle
+
+Tap a cycle on the cycles card. It's selected on the machine, and you get dropdowns for the settings that cycle allows: temperature, spin, soil level and rinses on the washer, dry level and dry time on the dryer. Under **When**, choose **Start now** or **Finish by** and pick a time; the machine works out the delay. Machines without a finish time get **Start later** with a delay in hours instead.
 
 ## Requirements
 
-- The **LocalThings** integration (HACS). This card reads its entities: `sensor.*_machine_state`, `*_progress`, `*_progress_percent`, `*_estimated_finish`, `*_completion_time`, `select.*_cycle` and `button.*_start/_pause/_stop`.
-- **Smart Control** switched on at the machine if you want to start, pause or resume it from Home Assistant. Samsung only accepts these commands while it is on: turn the machine on, load it, and press Smart Control. Without it the card still shows everything, and Stop still works.
+- The **LocalThings** integration (HACS), with your washer and/or dryer added.
+- **Smart Control** switched on at the machine to start, pause or resume it from Home Assistant. Samsung only accepts these commands while it is on: turn the machine on, load it, and press Smart Control. Without it the card still shows everything, and Stop still works.
 
-The card only uses LocalThings entities. If you also have the machines in the core SmartThings integration, those entities are ignored: SmartThings doesn't expose a cycle picker, progress percentage or Start/Pause buttons for these machines.
+The card only uses LocalThings entities. Copies of the same machines in the core SmartThings integration are ignored, because SmartThings doesn't expose the cycle picker, progress or buttons for them.
 
 ## Install
 
@@ -38,11 +62,17 @@ The card only uses LocalThings entities. If you also have the machines in the co
 ### Manual
 
 1. Copy `samsung-laundry-card.js` to `config/www/samsung-laundry-card.js`.
-2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.4.0` as a **JavaScript module**, and reload your browser.
+2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.5.0` as a **JavaScript module**, and reload your browser.
 
-## Use
+## Set up
 
-This puts each machine above its cycle buttons, washer on the left and dryer on the right:
+The easiest way is the dashboard editor:
+
+1. **Edit dashboard → Add card**, and search for **Samsung laundry**, **Samsung cycles** or **Samsung laundry pair**.
+2. Choose **Washer** or **Dryer**, and pick your machine under **Machine**. That's the LocalThings device; the card finds every entity it needs on it, even renamed ones. With only one washer and one dryer you can leave it empty and the card finds them itself.
+3. Optional: pick a **Door sensor** and a **Laundry-waiting helper**, and under **Look** and **Show on the card** choose the colour and which parts to show.
+
+Or in YAML, washer on the left and dryer on the right, each above its cycle buttons:
 
 ```yaml
 type: grid
@@ -53,7 +83,6 @@ cards:
     cards:
       - type: custom:samsung-laundry-card
         appliance: washer
-        max_width: 380px
         body_colour: midnight_blue
       - type: custom:samsung-cycles-card
         appliance: washer
@@ -62,34 +91,47 @@ cards:
     cards:
       - type: custom:samsung-laundry-card
         appliance: dryer
-        max_width: 380px
         body_colour: midnight_blue
       - type: custom:samsung-cycles-card
         appliance: dryer
         favourites: ["01", "2f", "32", "07", "05", "06", "36", "33"]
 ```
 
-You can also add them from the dashboard editor: **Add card**, search for **Samsung laundry** or **Samsung cycles**, and pick Washer or Dryer in the card's form.
+Or both machines in one card:
 
-The cards find your machines on their own: the washer is the LocalThings device with a `select.*_wash_temperature` entity, and the dryer the one with `select.*_dry_level`. If you have more than one of either, set `entity` to the start of the entity IDs, for example `entity: laundry_room_samsung_washer`.
+```yaml
+type: custom:samsung-laundry-pair-card
+body_colour: midnight_blue
+cycles: true
+```
 
 ### Options
 
 | Option | Card | What it does |
 |---|---|---|
-| `appliance` | both | `washer` or `dryer`. Default `washer` |
-| `entity` | both | Start of your entity IDs, e.g. `laundry_room_samsung_washer`. Found automatically if left out |
-| `name` | both | Card title. Default Washer / Dryer |
-| `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
-| `door` | both | Door sensor, `on` = open, e.g. `binary_sensor.laundry_room_samsung_washer_door_door`. Found automatically when it's named `<entity>_door_door` or `<entity>_door`. `false` turns it off |
-| `door_hint` | machine | Show "Open door to dry" when the machine is idle with the door shut. Default `true` for the washer, `false` for the dryer |
-| `unload_helper` | machine | An input_boolean that's on while laundry is waiting, used when there's no recorded history. Default `input_boolean.<washer or dryer>_unacknowledged`; `false` turns it off |
-| `cycle_names` | both | Names for cycle codes that would otherwise show as "Cycle 47", e.g. `{ "47": "Towels" }` |
-| `body_colour` | machine | The machine's colour: `midnight_blue` or any hex colour, e.g. `"#1d2840"`. Default white |
-| `max_width` | machine | How wide the machine can get, e.g. `380px` |
-| `style` | machine | `photo` (default, a detailed front-loader illustration) or `drawn` (a simple drawing) |
-| `images` | machine | Folder with your own `washer.svg`, `dryer.svg` and `laundry-drum.webp`, e.g. `/local/myimg/` |
-| `favourites` | cycles | Cycle codes to show as buttons. The others go behind **All cycles**. Default: every cycle the machine offers |
+| `appliance` | machine, cycles | `washer` or `dryer`. Default `washer` |
+| `device` | machine, cycles | The LocalThings device (the editor's **Machine** picker). Found automatically if left out |
+| `entities` | machine, cycles | Override any entity the card found, e.g. `{ progress: sensor.my_washer_progress }`. The names are the `ROLES` at the top of the card file |
+| `entity` | machine, cycles | Older alternative to `device`: the start of the machine's entity IDs, e.g. `laundry_room_samsung_washer` |
+| `name` | machine, cycles | Card title. Default Washer / Dryer |
+| `colour` | machine, cycles | Accent colour, e.g. `"#4fb3ff"` |
+| `door` | machine, cycles | Optional door sensor, `on` = open. Found automatically when it's named `<machine>_door_door` or `<machine>_door`. `false` turns it off |
+| `unload_helper` | machine | Optional input_boolean that's on while laundry is waiting, used when there's no recorded history. Default `input_boolean.<washer or dryer>_unacknowledged` if it exists; `false` turns it off |
+| `cycle_names` | machine, cycles | Names for cycle codes that would otherwise show as "Cycle 47", e.g. `{ "47": "Towels" }` |
+| `body_colour` | machine, pair | `white` (default), `midnight_blue`, or any hex colour, e.g. `"#1d2840"` |
+| `style` | machine, pair | `photo` (default, a detailed front-loader illustration) or `drawn` (a simple drawing) |
+| `max_width` | machine, pair | How wide the machine can get, e.g. `380px` |
+| `images` | machine, pair | Folder with your own `washer.svg`, `dryer.svg` and `laundry-drum.webp`, e.g. `/local/myimg/` |
+| `door_hint` | machine | "Open door to dry". Default `true` for the washer, `false` for the dryer |
+| `toggles` | machine, pair | Quick toggles. Default `true` |
+| `summary` | machine, pair | Last cycle. Default `true` |
+| `stats` | machine, pair | Weekly stats. Default `true` |
+| `favourites` | cycles | Cycle codes to show as buttons; the rest go behind **All cycles**. Default: every cycle the machine offers |
+| `title` | pair | Card title. Default Laundry |
+| `washer_device`, `dryer_device` | pair | The two machines. Found automatically if left out |
+| `washer_door`, `dryer_door` | pair | Their optional door sensors |
+| `cycles` | pair | Show each machine's cycles card underneath it. Default `false` |
+| `washer`, `dryer` | pair | Options for one machine only, e.g. `washer: { name: Washing machine }` |
 
 ### Cycle codes
 
@@ -121,7 +163,7 @@ Cycles downloaded through the SmartThings app (such as Wool or Perm Press on the
 
 ## Releasing an update
 
-Raise `SAMSUNG_CARD_VERSION` at the top of `samsung-laundry-card.js` and push to `main`. The **Release** workflow (`.github/workflows/release.yml`) then publishes a GitHub release tagged with that version, e.g. `v1.3.0`, and HACS offers it as an update. Pushes that don't change the version don't make a release.
+Raise `SAMSUNG_CARD_VERSION` at the top of `samsung-laundry-card.js` and push to `main`. The **Release** workflow (`.github/workflows/release.yml`) then publishes a GitHub release tagged with that version, e.g. `v1.6.0`, and HACS offers it as an update. Pushes that don't change the version don't make a release.
 
 ## Licence
 
