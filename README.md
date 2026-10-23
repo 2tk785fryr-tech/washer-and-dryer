@@ -12,7 +12,7 @@ Dashboard cards for Samsung washers and dryers connected through **[LocalThings]
 |---|---|
 | **Samsung laundry** (`custom:samsung-laundry-card`) | One machine: the picture, its status, Pause/Resume/Stop, quick toggles, the last cycle and weekly stats |
 | **Samsung cycles** (`custom:samsung-cycles-card`) | The machine's cycles as buttons. Pick one, adjust its settings, then start now or set a finish time |
-| **Samsung laundry pair** (`custom:samsung-laundry-pair-card`) | Optional: washer and dryer side by side in one card, with a status line for both |
+| **Samsung laundry pair** (`custom:samsung-laundry-pair-card`) | Optional: washer and dryer side by side in one card, with a status line for both. Stays side by side on a phone, with a compact layout |
 
 ## What it shows
 
@@ -20,7 +20,7 @@ Dashboard cards for Samsung washers and dryers connected through **[LocalThings]
 - **A progress ring round the door**: blue for the washer, orange for the dryer, light blue while the dryer cools down or runs wrinkle prevent, and green when the cycle is finished.
 - **The current phase** on the door glass: Weight sensing, Washing, Rinsing, Spinning, Drying, Cooling. The drum's speed follows it: slow while weight sensing, steady while washing, a fast blur during spin (with the water draining), and gentler while cooling.
 - **Cycle effects:** only white laundry on a Whites cycle. On a steam cycle (Steam Sanitize+, Steam Refresh, Wrinkle Away, or a steaming phase) the glass fogs up and wisps rise from the top of the door. Steam only shows while a cycle is running. Washer Self-Clean shows water and no laundry.
-- **Your machine's colour:** white by default, `midnight_blue`, or any hex colour.
+- **Your machine's colour:** White (classic, the default), Pearl, Onyx, Graphite, Midnight blue, or any hex colour.
 - **Cycle, temperature and spin** (washer) or **dry level** (dryer), and the finish time.
 - **Pause, Resume and Stop buttons** while a cycle runs. Stop asks first. Pause and Resume need Smart Control on; Stop works without it.
 - **Quick toggles** under the machine: Wrinkle prevent and Damp alert (dryer), and the end-of-cycle Sound (both).
@@ -62,7 +62,7 @@ The card only uses LocalThings entities. Copies of the same machines in the core
 ### Manual
 
 1. Copy `samsung-laundry-card.js` to `config/www/samsung-laundry-card.js`.
-2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.5.0` as a **JavaScript module**, and reload your browser.
+2. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/samsung-laundry-card.js?v=1.6.0` as a **JavaScript module**, and reload your browser.
 
 ## Set up
 
@@ -118,7 +118,7 @@ cycles: true
 | `door` | machine, cycles | Optional door sensor, `on` = open. Found automatically when it's named `<machine>_door_door` or `<machine>_door`. `false` turns it off |
 | `unload_helper` | machine | Optional input_boolean that's on while laundry is waiting, used when there's no recorded history. Default `input_boolean.<washer or dryer>_unacknowledged` if it exists; `false` turns it off |
 | `cycle_names` | machine, cycles | Names for cycle codes that would otherwise show as "Cycle 47", e.g. `{ "47": "Towels" }` |
-| `body_colour` | machine, pair | `white` (default), `midnight_blue`, or any hex colour, e.g. `"#1d2840"` |
+| `body_colour` | machine, pair | `white` (classic, default), `pearl`, `onyx`, `graphite`, `midnight_blue`, or any hex colour, e.g. `"#1d2840"` |
 | `style` | machine, pair | `photo` (default, a detailed front-loader illustration) or `drawn` (a simple drawing) |
 | `max_width` | machine, pair | How wide the machine can get, e.g. `380px` |
 | `images` | machine, pair | Folder with your own `washer.svg`, `dryer.svg` and `laundry-drum.webp`, e.g. `/local/myimg/` |

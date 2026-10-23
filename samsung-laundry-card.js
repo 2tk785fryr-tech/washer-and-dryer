@@ -27,7 +27,7 @@
 //                title, and any machine-card option for both; washer: {...} / dryer: {...} for one machine only
 
 
-const SAMSUNG_CARD_VERSION = "1.5.0";
+const SAMSUNG_CARD_VERSION = "1.6.0";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -38,13 +38,14 @@ const HON_IMG = {
 const honImg = (c, name) => c.images ? c.images + name : HON_IMG[name];
 
 // Body colours. A named colour or any hex value; the built-in pictures are recoloured to match.
-const BODY_COLOURS = { midnight_blue: "#1d2840", white: null };
+const BODY_COLOURS = { white: null, pearl: "#f3efe6", onyx: "#1b1c1f", graphite: "#3b3e44", midnight_blue: "#1d2840" };
 const hexRgb = h => { h = h.replace("#", ""); if (h.length === 3) h = [...h].map(x => x + x).join(""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
 // lighten (amt > 0, towards white) or darken (amt < 0, towards black) a colour
 const tone = (hex, amt) => "#" + hexRgb(hex).map(v => Math.round(amt > 0 ? v + (255 - v) * amt : v * (1 + amt)))
   .map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
 const bodyColour = c => { const v = c.body_colour ?? c.body_color; if (!v) return null; const b = v in BODY_COLOURS ? BODY_COLOURS[v] : v;
   return b && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(b) ? b : null; };
+const lightness = hex => { const [r, g, b] = hexRgb(hex); return (Math.max(r, g, b) + Math.min(r, g, b)) / 510; };
 const recoloured = {};
 // the built-in washer/dryer picture in the chosen body colour (the trim, door surround and dial follow it; chrome stays chrome)
 function machineImg(c, name) {
@@ -53,6 +54,13 @@ function machineImg(c, name) {
   const key = name + b;
   if (recoloured[key]) return recoloured[key];
   let svg = atob(HON_IMG[name].split(",")[1]);
+  if (lightness(b) > .6) {
+    // a light body (Pearl): tint the picture's light greys towards it, keeping their shading; the dark drum and display stay
+    const k = hexRgb(b).map(v => v / 255);
+    svg = svg.replace(/#[0-9a-f]{6}\b/gi, h => lightness(h) < .55 ? h
+      : "#" + hexRgb(h).map((v, i) => Math.round(v * k[i]).toString(16).padStart(2, "0")).join(""));
+    return (recoloured[key] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg));
+  }
   const grad = (id, stops) => { svg = svg.replace(new RegExp(`(<(?:linear|radial)Gradient id="${id}"[^>]*>)(.*?)(</(?:linear|radial)Gradient>)`),
     (m, a, body, z) => { let i = 0; return a + body.replace(/stop-color="[^"]+"/g, () => `stop-color="${stops[Math.min(i++, stops.length - 1)]}"`) + z; }); };
   grad("body", [tone(b, -.25), b, b, tone(b, -.3)]);
@@ -406,6 +414,23 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .info b { color:var(--fg); font-weight:600; }
 .embedded { background:none; border:none; padding:0; }
 .embedded .credit { display:none; }
+/* side by side, keep both pictures level: the Pause/Stop row keeps its space when one machine is idle */
+.embedded .ctl { min-height:35px; } .embedded .ctl[hidden] { display:flex; visibility:hidden; }
+/* narrow cards (two side by side on a phone): icon-only buttons and toggles, smaller text, a taller info panel */
+ha-card { container:card / inline-size; }
+@container card (max-width: 230px) {
+  .head { gap:4px; margin-bottom:6px; } .head .name { font-size:14.5px; }
+  .pill { font-size:10.5px; padding:2px 7px; max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ctl { gap:6px; margin-bottom:8px; } .ctl .lbl, .chip .lbl { display:none; }
+  .ctl button { padding:7px 11px; } .chip { padding:6px 9px; }
+  .ask { flex-wrap:wrap; padding:7px 8px; } .ask span { flex-basis:100%; font-size:12.5px; } .ask button { padding:6px 11px; font-size:12.5px; }
+  .banner { flex-wrap:wrap; font-size:12px; padding:7px 8px; } .banner button { padding:6px 10px; font-size:12px; }
+  .panel { left:6%; right:6%; top:75.5%; bottom:4.5%; padding:3px 8px; gap:1px; font-size:9.5px; border-radius:9px; }
+  .row { gap:6px; }
+  .phase { font-size:10.5px; padding:2px 7px; } .loaded .phase { padding:3px 8px; }
+  .info { font-size:11px; gap:4px; margin-top:8px; } .chips { margin-top:8px; gap:5px; }
+  .err { font-size:11.5px; }
+}
 `;
 
 class SamsungLaundryCard extends HTMLElement {
@@ -436,12 +461,12 @@ class SamsungLaundryCard extends HTMLElement {
           style="width:${10000 / d}%;left:${-(g.ring.x / d * 100 - 50)}%;top:${-(g.ring.y * R / d * 100 - 50)}%"></div>`
       : `<div class="leaf css" style="left:${g.ring.x}%;top:${g.ring.y}%;width:${d}%"></div>`;
     r.innerHTML = `<style>${CSS}</style>
-    <ha-card class="${c.appliance} ${c.style}${c.embedded ? " embedded" : ""}" style="--c:${esc(c.colour)};--trim:${b ? tone(b, .08) : "#eceef0"}">
+    <ha-card class="${c.appliance} ${c.style}${c.embedded ? " embedded" : ""}" style="--c:${esc(c.colour)};--trim:${!b ? "#eceef0" : lightness(b) > .6 ? tone(b, -.03) : tone(b, .08)}">
       <div class="head"><span class="name">${esc(c.title)}</span><span class="pill" id="pill">Off</span></div>
       <div class="ctl" id="ctl" hidden>
-        <button id="pause"><ha-icon icon="mdi:pause"></ha-icon>Pause</button>
-        <button id="resume"><ha-icon icon="mdi:play"></ha-icon>Resume</button>
-        <button id="stop"><ha-icon icon="mdi:stop"></ha-icon>Stop</button>
+        <button id="pause" title="Pause"><ha-icon icon="mdi:pause"></ha-icon><span class="lbl">Pause</span></button>
+        <button id="resume" title="Resume"><ha-icon icon="mdi:play"></ha-icon><span class="lbl">Resume</span></button>
+        <button id="stop" title="Stop"><ha-icon icon="mdi:stop"></ha-icon><span class="lbl">Stop</span></button>
       </div>
       <div class="ask" id="ask" hidden><span id="askT"></span><button id="askNo">Cancel</button><button class="go" id="askYes">Stop</button></div>
       <div class="banner" id="drum" hidden><span>Drum clean due<small id="drumT"></small></span><button id="drumGo">Start Self-Clean</button></div>
@@ -632,7 +657,7 @@ class SamsungLaundryCard extends HTMLElement {
     if (sig === this._chipSig) return;
     this._chipSig = sig;
     this.shadowRoot.getElementById("chips").innerHTML = list.map(([role, label, isOn, a, b]) =>
-      `<button class="chip${isOn ? " on" : ""}" data-role="${role}" title="${esc(label)}: ${isOn ? "on" : "off"}"><ha-icon icon="${isOn ? a : b}"></ha-icon>${esc(label)}</button>`).join("");
+      `<button class="chip${isOn ? " on" : ""}" data-role="${role}" title="${esc(label)}: ${isOn ? "on" : "off"}"><ha-icon icon="${isOn ? a : b}"></ha-icon><span class="lbl">${esc(label)}</span></button>`).join("");
   }
 
   // last cycle (name, how long, energy and water used, when it ended) and this week's stats
@@ -779,6 +804,13 @@ select, input[type=time] { font:14px inherit; font-family:inherit; color:#ececec
 .actions span { flex:1; font-size:13.5px; }
 .actions .go { background:var(--c); color:#000; font-weight:700; }
 .actions .go:disabled { opacity:.5; cursor:default; }
+/* narrow (two side by side on a phone): cycles two to a row */
+ha-card { container:cyc / inline-size; }
+@container cyc (max-width: 230px) {
+  .head { font-size:14.5px; } .grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; }
+  .prog { min-height:42px; padding:5px 6px; font-size:12px; border-radius:10px; } .note { font-size:11.5px; }
+  .setup { padding:9px; } .settings { grid-template-columns:1fr; }
+}
 `;
 class SamsungCyclesCard extends HTMLElement {
   setConfig(c) {
@@ -981,13 +1013,15 @@ class SamsungLaundryPairCard extends HTMLElement {
     const r = this.shadowRoot || this.attachShadow({ mode: "open" }), c = this._config;
     r.innerHTML = `<style>
       ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px solid #ffffff0f; border-radius:16px; box-shadow:none; padding:12px 14px 14px;
-        color:#ececec; font-family:var(--samsung-font,system-ui,-apple-system,"Segoe UI",sans-serif); }
+        color:#ececec; font-family:var(--samsung-font,system-ui,-apple-system,"Segoe UI",sans-serif); container:pair / inline-size; }
       .top { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin-bottom:10px; }
       .top b { font-size:17px; font-weight:600; } .top span { font-size:13px; color:#9a9a9a; }
-      .two { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px; }
+      .two { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }   /* side by side, even on a phone */
+      @container pair (max-width: 480px) { .two { gap:10px; } .top b { font-size:15.5px; } .top span { font-size:11.5px; } }
       .col { display:grid; gap:12px; align-content:start; }
       .credit { margin-top:10px; text-align:center; font-size:11.5px; color:#9a9a9a; }
       .credit a { color:#4fb3ff; text-decoration:none; font-weight:600; }
+      @media (max-width: 500px) { ha-card { padding:10px 9px 12px; } }
     </style><ha-card><div class="top"><b>${esc(c.title || "Laundry")}</b><span id="status"></span></div><div class="two"></div>
       <div class="credit">Based on the hOn card by <a href="https://mymediabuild.uk/home-assistant-washer-dryer-card/" target="_blank" rel="noopener">My Media Build</a></div></ha-card>`;
     const two = r.querySelector(".two");
@@ -1020,7 +1054,8 @@ const DEVICE = { device: { filter: { integration: "localthings" } } };
 const DOOR = { entity: { filter: { domain: "binary_sensor" } } };
 const HELPER = { entity: { filter: { domain: "input_boolean" } } };
 const COLOUR = { select: { mode: "dropdown", custom_value: true,
-  options: [{ value: "white", label: "White" }, { value: "midnight_blue", label: "Midnight blue" }] } };
+  options: [{ value: "white", label: "White (classic)" }, { value: "pearl", label: "Pearl (white)" }, { value: "onyx", label: "Onyx (black)" },
+    { value: "graphite", label: "Graphite (dark gray)" }, { value: "midnight_blue", label: "Midnight blue" }] } };
 const LOOK = [
   { name: "body_colour", selector: COLOUR },
   { name: "style", selector: { select: { mode: "dropdown", options: [{ value: "photo", label: "Detailed" }, { value: "drawn", label: "Simple drawing" }] } } },
