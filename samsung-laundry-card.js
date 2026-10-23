@@ -27,7 +27,7 @@
 //                title, and any machine-card option for both; washer: {...} / dryer: {...} for one machine only
 
 
-const SAMSUNG_CARD_VERSION = "1.6.0";
+const SAMSUNG_CARD_VERSION = "1.6.1";
 
 // Built-in pictures (front-loader illustrations from the hOn card, model labels removed), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -415,7 +415,7 @@ ha-card { display:block; background:var(--samsung-card-bg,#2a2a2a); border:1px s
 .embedded { background:none; border:none; padding:0; }
 .embedded .credit { display:none; }
 /* side by side, keep both pictures level: the Pause/Stop row keeps its space when one machine is idle */
-.embedded .ctl { min-height:35px; } .embedded .ctl[hidden] { display:flex; visibility:hidden; }
+.embedded.keepctl .ctl { min-height:35px; } .embedded.keepctl .ctl[hidden] { display:flex; visibility:hidden; }
 /* narrow cards (two side by side on a phone): icon-only buttons and toggles, smaller text, a taller info panel */
 ha-card { container:card / inline-size; }
 @container card (max-width: 230px) {
@@ -596,6 +596,7 @@ class SamsungLaundryCard extends HTMLElement {
 
     const smart = S("smart")?.state === "on";
     r.getElementById("ctl").hidden = !on;
+    this.hasControls = on;
     r.getElementById("pause").hidden = !on || paused || !smart;   // Run and Pause need Smart Control on; Stop works without it
     r.getElementById("resume").hidden = !paused || !smart;
     r.getElementById("stop").hidden = !on;
@@ -1037,6 +1038,9 @@ class SamsungLaundryPairCard extends HTMLElement {
   }
   _status() {
     const el = this.shadowRoot?.getElementById("status"); if (!el || !this._machines) return;
+    // keep both pictures level: when either machine shows Pause/Stop, the other keeps that row's space
+    const ctl = Object.values(this._machines).some(m => m.hasControls);
+    for (const m of Object.values(this._machines)) m.shadowRoot?.querySelector("ha-card")?.classList.toggle("keepctl", ctl);
     el.textContent = ["washer", "dryer"].map(k => `${this._cfg[k].name || DEFAULTS[k].title}: ${this._machines[k].status || "…"}`).join(" · ");
   }
 }

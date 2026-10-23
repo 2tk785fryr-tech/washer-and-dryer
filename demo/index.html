@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samsung Laundry Card Demo</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #111; font-family: Roboto, -apple-system, system-ui, sans-serif; color: #e1e1e1; }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; } p { margin: 0 0 12px; color: #9b9b9b; font-size: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .controls span { width: 100%; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+  .controls button { background: #2a2a2a; color: inherit; border: 1px solid #444; border-radius: 16px; padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .controls button.on { border-color: #4fb3ff; color: #fff; }
+  .clean .chrome { display: none; } .clean { padding: 8px; } .clean .wrap { max-width: none; }
+  .phone .wrap { max-width: 386px; }
+  ha-icon { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="chrome"><h1>Samsung Laundry Card demo</h1>
+    <p>Mock data shaped like a Samsung washer and dryer on LocalThings. Pick a scene and a colour; tap the cards' own buttons too.</p>
+    <div class="controls" id="scenes"><span>Scene</span></div>
+    <div class="controls" id="colours"><span>Colour</span></div>
+    <div class="controls" id="layouts"><span>Layout</span></div>
+  </div>
+  <div id="stage"></div>
+</div>
+<script>
+  // Stand-in for Home Assistant's <ha-icon>, drawing Material Design Icons (pictogrammers.com, Apache 2.0) for the icons the card uses.
+  const MDI = {"mdi:door-closed":"M16,11H18V13H16V11M12,3H19C20.11,3 21,3.89 21,5V19H22V21H2V19H10V5C10,3.89 10.89,3 12,3M12,5V19H19V5H12Z","mdi:door-open":"M12,3C10.89,3 10,3.89 10,5H3V19H2V21H22V19H21V5C21,3.89 20.11,3 19,3H12M12,5H19V19H12V5M5,11H7V13H5V11Z","mdi:human-child":"M12,2A3,3 0 0,1 15,5A3,3 0 0,1 12,8A3,3 0 0,1 9,5A3,3 0 0,1 12,2M11,22H8V16H6V9H18V16H16V22H13V18H11V22Z","mdi:iron":"M21 6C19.34 6 18 7.34 18 9V13C18 13.55 17.55 14 17 14V10C17 8.34 15.66 7 14 7H10C8.34 7 7 8.34 7 10H9C9 9.45 9.45 9 10 9H14C14.55 9 15 9.45 15 10V11H6C3.79 11 2 12.79 2 15V18H17V16C18.66 16 20 14.66 20 13V9C20 8.45 20.45 8 21 8H22V6H21Z","mdi:iron-outline":"M21 6C19.34 6 18 7.34 18 9V13C18 13.55 17.55 14 17 14V10C17 8.34 15.66 7 14 7H10C8.34 7 7 8.34 7 10H9C9 9.45 9.45 9 10 9H14C14.55 9 15 9.45 15 10V11H6C3.79 11 2 12.79 2 15V18H17V16C18.66 16 20 14.66 20 13V9C20 8.45 20.45 8 21 8H22V6H21M15 16H4V15C4 13.9 4.9 13 6 13H15V16Z","mdi:lock":"M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z","mdi:lock-open-variant":"M18 1C15.24 1 13 3.24 13 6V8H4C2.9 8 2 8.89 2 10V20C2 21.11 2.9 22 4 22H16C17.11 22 18 21.11 18 20V10C18 8.9 17.11 8 16 8H15V6C15 4.34 16.34 3 18 3C19.66 3 21 4.34 21 6V8H23V6C23 3.24 20.76 1 18 1M10 13C11.1 13 12 13.89 12 15C12 16.11 11.11 17 10 17C8.9 17 8 16.11 8 15C8 13.9 8.9 13 10 13Z","mdi:pause":"M14,19H18V5H14M6,19H10V5H6V19Z","mdi:play":"M8,5.14V19.14L19,12.14L8,5.14Z","mdi:stop":"M18,18H6V6H18V18Z","mdi:volume-high":"M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z","mdi:volume-off":"M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z","mdi:water-alert":"M10 3.25C10 3.25 16 10 16 14C16 17.31 13.31 20 10 20S4 17.31 4 14C4 10 10 3.25 10 3.25M20 7V13H18V7H20M18 17H20V15H18V17Z","mdi:water-alert-outline":"M10 3.25C10 3.25 4 10 4 14C4 17.31 6.69 20 10 20S16 17.31 16 14C16 10 10 3.25 10 3.25M10 18C7.79 18 6 16.21 6 14C6 12.23 8 8.96 10 6.39C12 8.95 14 12.23 14 14C14 16.21 12.21 18 10 18M20 7V13H18V7H20M18 17H20V15H18V17Z","mdi:wifi":"M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z"};
+  customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    attributeChangedCallback() {
+      this.style.width = this.style.height = "var(--mdc-icon-size, 24px)";
+      this.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%;height:100%;display:block" fill="currentColor"><path d="${MDI[this.getAttribute("icon")] || ""}"/></svg>`;
+    }
+  });
+</script>
+<script src="../samsung-laundry-card.js"></script>
+<script>
+  // ---- mock Home Assistant: states, entity registry (device + LocalThings translation keys), history and statistics ----
+  const NAMES = {
+    progress: { idle: "Idle", weightsensing: "Weight sensing", wash: "Washing", rinse: "Rinsing", spin: "Spinning", finish: "Finished", drying: "Drying", cooling: "Cooling" },
+    washer_cycle: { "01": "Normal", "53": "Heavy Duty", "7c": "Whites", "65": "Colors", "57": "Delicates", "04": "Quick Wash", "7d": "Bedding/Waterproof", "7e": "Self-Clean" },
+    dryer_cycle: { "01": "Normal", "2f": "Heavy Duty", "33": "Steam Sanitize+", "32": "Perm Press", "05": "Bedding", "07": "Delicates", "06": "Time dry" },
+    wash_temperature: { cold: "Cold", cool: "Cool", warm: "Warm", hot: "Hot" }, spin_speed: { no_spin: "No spin", medium: "Medium", high: "High", extra_high: "Extra high" },
+    soil_level: { light: "Light", normal: "Normal", heavy: "Heavy" }, dryer_dry_level: { damp: "Damp", less: "Less", normal: "Normal", more: "More", very: "Very" },
+    buzzer_sound: { on: "On", off: "Off" },
+  };
+  const now = Date.now(), iso = ms => new Date(ms).toISOString(), ago = m => now - m * 60000;
+  function machine(kind, o, states, entities, history) {
+    const p = `laundry_room_samsung_${kind}`, dev = `samsung_${kind}`;
+    const add = (suffix, domain, tk, state, attrs = {}, lcAgo = 0) => {
+      const id = `${domain}.${p}${suffix}`;
+      states[id] = { entity_id: id, state: String(state), attributes: attrs, last_changed: iso(ago(lcAgo)), last_updated: iso(ago(lcAgo)) };
+      entities[id] = { entity_id: id, platform: "localthings", device_id: dev, translation_key: tk };
+      return id;
+    };
+    const cycles = kind === "washer" ? "washer_cycle" : "dryer_cycle";
+    const ids = {
+      state: add("_machine_state", "sensor", "machine_state", o.state || "idle"),
+      prog: add("_progress", "sensor", "progress", o.prog || "idle"),
+      cycle: add("_cycle", "select", cycles + "_table", o.cycle || "01", { options: Object.keys(NAMES[cycles]) }),
+      energy: add("_energy", "sensor", "energy_kwh", o.energyNow ?? 2.3, { unit_of_measurement: "kWh" }),
+    };
+    add("_progress_percent", "sensor", "progress_percentage", o.pct || 0);
+    add("_estimated_finish", "sensor", "finish_time", o.end ? iso(now + o.end * 60000) : "unknown");
+    add("_completion_time", "sensor", "completion_minutes", o.rem ?? 52);
+    add("_power", "binary_sensor", "power_switch", o.power || "off");
+    add("_smart_control", "binary_sensor", "remote_control", o.smart || "off");
+    add("_child_lock", "binary_sensor", "child_lock", "off");
+    add("_alarm_code", "sensor", "alarm_code", "none");
+    for (const b of ["start", "pause", "stop"]) add(`_${b}`, "button", b, "unknown");
+    add("_buzzer_sound", "select", "buzzer_sound", o.buzzer || "on", { options: ["off", "on"] });
+    add("_finish_by", "time", "delay_finish_at", "unknown");
+    add("_delay_start", "number", "delay_start_hours", 0);
+    if (kind === "washer") {
+      add("_wash_temperature", "select", "wash_temperature", o.temp || "warm", { options: ["cold", "cool", "warm", "hot"] });
+      add("_spin_speed", "select", "spin_speed", "high", { options: ["no_spin", "medium", "high", "extra_high"] });
+      add("_soil_level", "select", "soil_level", "normal", { options: ["light", "normal", "heavy"] });
+      add("_rinse_cycles", "select", "rinse_cycles", "1", { options: ["0", "1", "2", "3"] });
+      add("_drum_clean_due_in", "sensor", "drum_clean_cycles_remaining", o.drum ?? 14);
+    } else {
+      add("_dry_level", "select", "dryer_dry_level", "normal", { options: ["damp", "less", "normal", "more", "very"] });
+      add("_wrinkle_prevent", "switch", "wrinkle_prevent", o.wrinkle || "on");
+      add("_damp_alert", "switch", "damp_alert", "off");
+      add("_wrinkle_prevent_active", "binary_sensor", "wrinkle_prevent_active", o.wrinkleActive || "off");
+    }
+    // the optional add-on door sensor
+    const door = `binary_sensor.${p}_door_door`;
+    states[door] = { entity_id: door, state: o.door || "off", attributes: { device_class: "door" }, last_changed: iso(ago(o.doorAgo ?? 300)), last_updated: iso(ago(o.doorAgo ?? 300)) };
+    entities[door] = { entity_id: door, platform: "matter", device_id: `door_${kind}` };
+    ids.door = door;
+    for (const [k, rows] of Object.entries(o.hist || {})) history[ids[k]] = rows;
+  }
+  function makeHass(spec) {
+    const states = {}, entities = {}, history = {};
+    for (const [kind, o] of Object.entries(spec)) machine(kind, o, states, entities, history);
+    const name = (st, v) => { const tk = entities[st.entity_id]?.translation_key || "";
+      return (NAMES[tk] || NAMES[tk.replace(/_table$/, "")] || NAMES[st.entity_id.includes("progress") && !st.entity_id.includes("percent") ? "progress" : ""] || {})[v] ?? v; };
+    const hass = { states, entities, locale: { language: "en" },
+      formatEntityState: (st, v) => name(st, v ?? st.state),
+      callWS: async q => {
+        if (q.type === "recorder/statistic_during_period") return { change: q.statistic_id.includes("dryer") ? 18.6 : 2.4 };
+        const out = {}; for (const id of q.entity_ids) if (history[id]) out[id] = history[id].map(([m, s]) => ({ s, lu: ago(m) / 1000 })); return out; },
+      callService: async (domain, service, data, target) => {
+        const id = target?.entity_id, s = states[id];
+        if (s && domain === "select") s.state = data.option;
+        if (s && domain === "switch") s.state = s.state === "on" ? "off" : "on";
+        console.log("service", domain, service, data, id);
+        render();
+      } };
+    return hass;
+  }
+  // a week of loads, so the last cycle and stats have something to show
+  const WASH_WEEK = { state: [[9000, "idle"], [8000, "active"], [7940, "idle"], [5000, "active"], [4950, "idle"], [3000, "active"], [2940, "idle"], [100, "active"], [40, "idle"]],
+    cycle: [[9001, "53"], [7930, "01"], [5001, "7c"], [4940, "01"], [3001, "53"], [2930, "01"], [101, "53"], [40.1, "01"]],
+    prog: [[100, "wash"], [41, "finish"], [36, "idle"]], energy: [[9000, "1.8"], [7950, "1.9"], [2950, "2.0"], [35, "2.3"]] };
+  const DRY_WEEK = { state: [[3000, "active"], [2940, "idle"], [1500, "active"], [1440, "idle"], [150, "active"], [60, "idle"]],
+    cycle: [[3001, "2f"], [2939, "01"], [1501, "01"], [1439, "01"], [151, "33"], [59.9, "01"]],
+    prog: [[150, "drying"], [61, "finish"], [56, "idle"]], energy: [[3000, "66.0"], [2930, "68.6"], [1430, "70.4"], [150, "72.8"], [50, "75.6"]] };
+  const running = (cycle, extra = {}) => ({ state: "active", power: "on", smart: "on", cycle, door: "off", doorAgo: 120, hist: { state: [[30, "active"]], cycle: [[31, cycle]] }, ...extra });
+
+  const SCENES = {
+    washing:  { label: "Washing", washer: running("65", { prog: "wash", pct: 34, end: 38, rem: 38 }), dryer: running("01", { prog: "drying", pct: 41, end: 31, rem: 31 }) },
+    spin:     { label: "Spin & cool down", washer: running("53", { prog: "spin", pct: 91, end: 6, rem: 6 }), dryer: running("01", { prog: "cooling", pct: 94, end: 4, rem: 4 }) },
+    special:  { label: "Whites & steam", washer: running("7c", { prog: "wash", pct: 22, end: 51, rem: 51, temp: "hot" }), dryer: running("33", { prog: "drying", pct: 48, end: 30, rem: 30 }) },
+    inside:   { label: "Clothes inside", washer: { state: "idle", door: "off", doorAgo: 9000, hist: { ...WASH_WEEK, cycle: [[9001, "53"], [7930, "01"], [5001, "7c"], [4940, "01"], [3001, "53"], [2930, "01"], [101, "7c"], [40.1, "01"]], door: [[9000, "off"]] } },
+                dryer: { state: "idle", door: "off", doorAgo: 3000, hist: { ...DRY_WEEK, door: [[3000, "off"]] } } },
+    doors:    { label: "Doors open", washer: { state: "idle", door: "on", doorAgo: 1, hist: { ...WASH_WEEK, door: [[9000, "off"], [1, "on"]] } },
+                dryer: { state: "idle", door: "on", doorAgo: 1, hist: { ...DRY_WEEK, door: [[3000, "off"], [1, "on"]] } } },
+    extras:   { label: "Drum clean & toggles", washer: { state: "idle", power: "on", smart: "on", drum: 0, door: "off", doorAgo: 20, hist: { ...WASH_WEEK, door: [[9000, "off"], [30, "on"], [20, "off"]] } },
+                dryer: { state: "idle", door: "off", doorAgo: 30, wrinkle: "on", hist: { ...DRY_WEEK, door: [[3000, "off"], [40, "on"], [30, "off"]] } } },
+    paused:   { label: "Paused & wrinkle prevent", washer: running("57", { state: "pause", prog: "rinse", pct: 58, rem: 24 }),
+                dryer: { state: "idle", prog: "finish", door: "off", doorAgo: 3000, wrinkleActive: "on", hist: { ...DRY_WEEK, door: [[3000, "off"]] } } },
+  };
+  const COLOURS = { white: "White (classic)", pearl: "Pearl", onyx: "Onyx", graphite: "Graphite", midnight_blue: "Midnight blue" };
+  const LAYOUTS = { pair: "Pair card", cards: "Machine + cycles cards", phone: "Phone width" };
+
+  const q = new URLSearchParams(location.search);
+  let scene = q.get("scene") || "washing", colour = q.get("colour") || "midnight_blue", layout = q.get("layout") || "pair";
+  if (q.has("clean")) document.body.classList.add("clean");
+  let cards = [];
+  function build() {
+    document.body.classList.toggle("phone", layout === "phone");
+    const stage = document.getElementById("stage"); stage.innerHTML = "";
+    const shared = { body_colour: colour };
+    if (layout === "cards") {
+      stage.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:start";
+      cards = [];
+      for (const kind of ["washer", "dryer"]) {
+        const col = document.createElement("div"); col.style.cssText = "display:grid;gap:16px";
+        const m = document.createElement("samsung-laundry-card"); m.setConfig({ appliance: kind, ...shared });
+        const c = document.createElement("samsung-cycles-card"); c.setConfig({ appliance: kind });
+        col.append(m, c); stage.appendChild(col); cards.push(m, c);
+      }
+    } else {
+      stage.style.cssText = "";
+      const pair = document.createElement("samsung-laundry-pair-card"); pair.setConfig({ ...shared, cycles: q.has("cycles") });
+      stage.appendChild(pair); cards = [pair];
+    }
+    render();
+  }
+  function render() {
+    const s = SCENES[scene], hass = window.hass && window.hass._scene === scene ? window.hass : makeHass({ washer: s.washer, dryer: s.dryer });
+    hass._scene = scene; window.hass = hass;
+    for (const c of cards) c.hass = { ...hass };
+  }
+  function buttons(id, list, get, set) {
+    const box = document.getElementById(id);
+    for (const [k, label] of Object.entries(list)) {
+      const b = document.createElement("button"); b.textContent = label; b.dataset.k = k;
+      b.addEventListener("click", () => { set(k); box.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.k === get())); });
+      box.appendChild(b);
+    }
+    box.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.k === get()));
+  }
+  buttons("scenes", Object.fromEntries(Object.entries(SCENES).map(([k, v]) => [k, v.label])), () => scene, k => { scene = k; window.hass = null; render(); });
+  buttons("colours", COLOURS, () => colour, k => { colour = k; build(); });
+  buttons("layouts", LAYOUTS, () => layout, k => { layout = k; build(); });
+  build();
+  // ?pick=53 opens the cycles card's settings for that cycle (for screenshots)
+  if (q.get("pick")) setTimeout(async () => {
+    const cy = document.querySelector("samsung-cycles-card") || document.querySelector("samsung-laundry-pair-card")?.shadowRoot.querySelector("samsung-cycles-card");
+    window.hass.states["binary_sensor.laundry_room_samsung_washer_smart_control"].state = "on"; render();
+    await new Promise(r => setTimeout(r, 300));
+    [...cy.shadowRoot.querySelectorAll(".prog")].find(b => b.dataset.k === q.get("pick"))?.click();
+    await new Promise(r => setTimeout(r, 900));
+    if (q.has("finishby")) cy.shadowRoot.querySelector('.seg button[data-w="by"]').click();
+  }, 500);
+</script>
+</body>
+</html>
